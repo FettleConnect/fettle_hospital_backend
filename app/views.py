@@ -511,6 +511,8 @@ class EscalationManagementView(APIView):
             if start_date and end_date:
                 queryset = queryset.filter(escalated_at__date__range=[start_date, end_date])
 
+            print(f"DEBUG: Found {queryset.count()} escalations for hospital_ids {hospital_ids} in range {start_date} to {end_date}")
+
             escalations = [
                 {
                     "id": str(e.id),
@@ -1421,7 +1423,11 @@ class EscalationEngagement(APIView):
 
             # === 3. Recent Escalations ===
             recent_qs = (
-                EscalationModel.objects.filter(patient__hospital=user_id)
+                EscalationModel.objects.filter(
+                    patient__hospital=user_id,
+                    escalated_at__date__gte=start_date,
+                    escalated_at__date__lte=end_date
+                )
                 .select_related('patient')
                 .order_by('-escalated_at')
             )

@@ -142,7 +142,8 @@ class Outbound_call(APIView):
                     "hospital":i["hospital_name"],
                     "department":i["department"],
                     "campaign_name": campaign_obj.name,
-                    "campaign_id": str(campaign_obj.id)
+                    "campaign_id": str(campaign_obj.id),
+                    "language_policy": "Strictly ONLY English, Hindi, or Telugu. If the patient speaks any other language, politely end the call and mark as language_barrier."
                 }
                 json_payload={"assistantId":assistant_id,"phoneNumberId":call_id,"customer":{"number":"+91"+i["mobile_no"],"id_key":id_key},"metadata":metadata}
                 # calling.append(json_payload)

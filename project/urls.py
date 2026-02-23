@@ -17,7 +17,7 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path
 from app.views import login_view,patient_insert_view,CallFeedbackView,EscalationfeedbackView,UpdateEscalation,CommunityfeedbackView,UpdateCommunity,EscalationManagementView,fetchpatients,fetchrecentactivity,AdminDashboardView,KPISummary,Patientengagement,CommunityEngagement,EscalationEngagement,validateToken,upload_files_log,Allhospitals,RevisitAnalyticsAPIView,TextView,tab_access,PdfView,CampaignView
-from phone_calling.views import Outbound_call,Process_Outbound_call,download_excel_outbound,Inboundcall,showInboundcall,processinboundcall_view
+from phone_calling.views import Outbound_call,Process_Outbound_call,download_excel_outbound,Inboundcall,showInboundcall,processinboundcall_view,VapiWebhook
 from inbound_dashboard.views import Patientengagement_inbound,CallFeedbackView_inbound,CommunityfeedbackView_inbound,CommunityEngagement_inbound,EscalationfeedbackView_inbound,EscalationEngagement_inbound,RevisitAnalyticsAPIView_inbound,KPISummary_inbound,UpdateEscalation_inbound
 urlpatterns = [
     path('api/admin/', admin.site.urls),
@@ -44,6 +44,7 @@ urlpatterns = [
     path("api/tab_access/",tab_access.as_view()),
     path("api/pdf_view/",PdfView.as_view()),
     path("api/campaigns/",CampaignView.as_view()),
+    path("api/vapi_webhook/", VapiWebhook.as_view()),
     path("api/outbound_call/",Outbound_call.as_view()),
     path("api/process_outbound_call/",Process_Outbound_call.as_view()),
     path("api/download_excel/",download_excel_outbound.as_view()),

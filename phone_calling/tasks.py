@@ -45,16 +45,22 @@ def call_outbound_task(json_payload):
     }   
         phone_number=json_payload["customer"]["number"]
         id_key=json_payload["customer"]["id_key"]
-        dispatch_call(phone_number, id_key)
-        # response = requests.post(url, headers=headers, json=json_payload)
+        
+        # Trigger real Vapi call via API
+        response = requests.post(url, headers=headers, json=json_payload)
+        response_data = response.json()
+        
+        if response.status_code != 201 and response.status_code != 200:
+            print(f"Vapi API Error: {response_data}")
+            return {"error": 1, "errorMsg": f"Vapi Error: {response_data.get('message')}"}
 
-        # response_vapi=response.json()
+        vapi_internal_id = response_data.get("id") # The actual Vapi Call ID
     
         task_id = call_outbound_task.request.id
         print("task_id--->",task_id)
         hospital_name=json_payload["metadata"]["hospital"]
         hospital_obj=Hospital_model.objects.get(name=hospital_name)
-        vapi_id=id_key
+        vapi_id=id_key # Keep our custom id_key for lookup in webhook
         status="in-progress"
         try:
             assistant_id=Outbound_assistant.objects.get(hospital=hospital_obj)
@@ -679,11 +685,138 @@ def process_inbound_calls(json_payload):
         objj.audio_link=recording_url
         objj.task_id_process=task_id_process
         objj.calling_process=call_progress
-        objj.save()
-        return {"error":0,"errorMsg":"","text_message":text_message}
     except Exception as e:
         print(str(e))
         return {"error":1,"errorMsg":str(e)}
+
+@shared_task
+def process_vapi_webhook_task(data):
+    """
+    Background task to process call data received via Vapi Webhook.
+    1. Uploads transcript/audio to S3.
+    2. Runs AI analysis.
+    3. Updates database status.
+    """
+    try:
+        vapi_id = data["vapi_id"]
+        customer_id_key = data["customer_id_key"]
+        patient_id = data["patient_id"]
+        hospital_name = data["hospital_name"]
+        transcript = data["transcript"]
+        recording_url = data["recording_url"]
+        
+        print(f"Processing Webhook for Call: {vapi_id} | Patient: {patient_id}")
+
+        # 1. Sync Transcript to S3
+        s3 = boto3.client(
+            "s3",
+            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+            region_name=settings.AWS_S3_REGION_NAME,
+        )
+        
+        unique_txt_filename = f"{vapi_id}_transcript.txt"
+        s3.upload_fileobj(
+            BytesIO(transcript.encode("utf-8")),
+            settings.AWS_STORAGE_BUCKET_NAME,
+            f"{hospital_name}/{unique_txt_filename}",
+            ExtraArgs={"ContentType": "text/plain"}
+        )
+
+        # 2. Download and Sync Audio to S3 (if available)
+        final_recording_url = recording_url
+        if recording_url:
+            audio_response = requests.get(recording_url)
+            if audio_response.status_code == 200:
+                unique_audio_filename = f"{vapi_id}_audio.wav"
+                s3.upload_fileobj(
+                    BytesIO(audio_response.content),
+                    settings.AWS_STORAGE_BUCKET_NAME,
+                    f"{hospital_name}/{unique_audio_filename}",
+                    ExtraArgs={"ContentType": "audio/wav"}
+                )
+                final_recording_url = f"s3://{settings.AWS_STORAGE_BUCKET_NAME}/{hospital_name}/{unique_audio_filename}"
+
+        # 3. AI Analysis (Reuse existing logic)
+        analysis_result = json_audio(patient_id, transcript, data["started_at"], data["duration"] or 0)
+        
+        # 4. Update Database
+        try:
+            call_obj = Outbound_Hospital.objects.get(vapi_id=customer_id_key)
+            call_obj.status = "ended"
+            call_obj.endedReason = data["ended_reason"]
+            call_obj.started_at = data["started_at"]
+            call_obj.ended_at = data["ended_at"]
+            call_obj.message_s3_link = f"s3://{settings.AWS_STORAGE_BUCKET_NAME}/{hospital_name}/{unique_txt_filename}"
+            call_obj.audio_link = recording_url
+            call_obj.calling_process = analysis_result.get("call_status", "not_connected")
+            call_obj.save()
+            
+            # 5. Trigger standard feedback loop (WhatsApp, Escalations, etc.)
+            if "error" not in analysis_result and analysis_result.get("call_status") == 'connected':
+                # Map to Internal CallFeedbackModel
+                from app.models import Patient_model
+                patient = Patient_model.objects.get(id=patient_id)
+                department = patient.department
+                
+                # Internal API Login for loopback (using same logic as process_outbound_calls)
+                url_backend = "https://hospital.fettleconnect.com:8000"
+                login_url = url_backend + "/api/login/"
+                res_login = requests.post(login_url, json={"email": "admin@gmail.com", "password": "admin", "is_admin": True}).json()
+                headers_url = {"Authorization": f"Bearer {res_login['token']}", "Content-Type": "application/json"}
+                
+                # Post Feedback
+                call_feedback_payload = {
+                    "call_duration": data["duration"],
+                    "call_outcome": analysis_result["call_outcome"],
+                    "call_status": analysis_result["call_status"],
+                    "called_at": data["started_at"],
+                    "called_by": analysis_result["called_by"],
+                    "community_added": analysis_result["community_added"],
+                    "escalation_required": analysis_result["escalation_required"],
+                    "patient_id": patient_id,
+                    "remarks": analysis_result["remarks"],
+                    "revisit_encouraged": analysis_result["revisit_encouraged"]
+                }
+                requests.post(url_backend + "/api/callfeedback/", headers=headers_url, json=call_feedback_payload)
+
+                # Post Escalation
+                if analysis_result['escalation_required']:
+                    escalation_payload = {"patient_id": patient_id, "issue_description": analysis_result['remarks'], "department": department}
+                    requests.post(url_backend + "/api/escalationfeedback/", headers=headers_url, json=escalation_payload)
+                    
+                    # WhatsApp Alert
+                    whatsapp_msg(
+                        f"patient_name: {patient.patient_name}\n"
+                        f"mobile_no: {patient.mobile_no}\n"
+                        f"issue_description: {analysis_result['remarks']}"
+                    )
+
+                # Post Community
+                if analysis_result['community_added']:
+                    community_payload = {"patient_id": patient_id, "engagement_type": "post", "department": department}
+                    requests.post(url_backend + "/api/communityfeedback/", headers=headers_url, json=community_payload)
+            else:
+                # Handle not_connected flow
+                url_backend = "https://hospital.fettleconnect.com:8000"
+                login_url = url_backend + "/api/login/"
+                res_login = requests.post(login_url, json={"email": "admin@gmail.com", "password": "admin", "is_admin": True}).json()
+                headers_url = {"Authorization": f"Bearer {res_login['token']}", "Content-Type": "application/json"}
+                
+                call_feedback_payload = {
+                    "call_outcome": "no_feedback", "call_status": "not_connected", "called_by": "Vapi Agent",
+                    "community_added": False, "escalation_required": False, "patient_id": patient_id,
+                    "remarks": "Call not connected", "revisit_encouraged": False, "called_at": data["started_at"]
+                }
+                requests.post(url_backend + "/api/callfeedback/", headers=headers_url, json=call_feedback_payload)
+            
+        except Outbound_Hospital.DoesNotExist:
+            print(f"Error: Could not find call record for id_key {customer_id_key}")
+
+        return {"status": "success", "vapi_id": vapi_id}
+    except Exception as e:
+        print(f"Error in process_vapi_webhook_task: {str(e)}")
+        return {"error": str(e)}
         
     
     

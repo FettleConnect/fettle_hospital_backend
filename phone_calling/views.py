@@ -116,7 +116,23 @@ class Outbound_call(APIView):
                     }
                     for p in patients
                 ]
+
+            # Create/Get Campaign Record
             campaign_name = payload.get('campaign_name', 'Default Campaign')
+            campaign_id = payload.get('campaign_id')
+            
+            from app.models import Campaign
+            if campaign_id:
+                campaign_obj = Campaign.objects.get(id=campaign_id)
+            else:
+                campaign_obj = Campaign.objects.create(
+                    hospital=hospital_obj,
+                    name=campaign_name,
+                    start_date=datetime.strptime(start_date_str, "%Y-%m-%d").date() if start_date_str else None,
+                    end_date=datetime.strptime(end_date_str, "%Y-%m-%d").date() if end_date_str else None,
+                    unconnected_only=unconnected_only
+                )
+
             calling=[]
             for i in patient_data:
                 id_key=str(i["id"])+"__"+i["hospital_name"]+"__"+i["mobile_no"]+"__"+datetime.now().strftime("%Y%m%d%H%M%S")+"__livekit"
@@ -125,7 +141,8 @@ class Outbound_call(APIView):
                     "patient_name":i["patient_name"],
                     "hospital":i["hospital_name"],
                     "department":i["department"],
-                    "campaign_name": campaign_name
+                    "campaign_name": campaign_obj.name,
+                    "campaign_id": str(campaign_obj.id)
                 }
                 json_payload={"assistantId":assistant_id,"phoneNumberId":call_id,"customer":{"number":"+91"+i["mobile_no"],"id_key":id_key},"metadata":metadata}
                 # calling.append(json_payload)
@@ -136,6 +153,7 @@ class Outbound_call(APIView):
             return Response({
                 "msg": "Assistant found",
                 "assistant_id": assistant_id,
+                "campaign_id": str(campaign_obj.id),
                 "patients":patient_data,
                 "calling":calling,
                 "error": 0

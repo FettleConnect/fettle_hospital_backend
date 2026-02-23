@@ -242,6 +242,21 @@ class Outbound_assistant(models.Model):
     call_id=models.CharField(max_length=10000,null=True,blank=True)
     def __str__(self):
         return f"{self.hospital} {self.assistant_id}"
+
+class Campaign(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    hospital = models.ForeignKey(Hospital_model, on_delete=models.CASCADE, related_name='campaigns')
+    name = models.CharField(max_length=255)
+    purpose = models.TextField(blank=True, null=True)
+    start_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(null=True, blank=True)
+    unconnected_only = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(max_length=20, default='active') 
+
+    def __str__(self):
+        return self.name
+
 class Outbound_Hospital(models.Model):
     CALLING_STATUS_CHOICES=[
         ("not_happened","NOT HAPPENED"),
@@ -254,6 +269,7 @@ class Outbound_Hospital(models.Model):
     status=models.CharField(max_length=1000,null=True,blank=True)
     assistant_id=models.ForeignKey(Outbound_assistant,on_delete=models.SET_NULL,null=True,blank=True)
     patient_id=models.ForeignKey(Patient_model, on_delete=models.SET_NULL, related_name='patients_outbound',null=True,blank=True)
+    campaign = models.ForeignKey(Campaign, on_delete=models.SET_NULL, null=True, blank=True, related_name='calls')
     endedReason=models.CharField(max_length=1000,null=True,blank=True)
     started_at=models.DateTimeField(default=timezone.now)
     ended_at=models.DateTimeField(default=timezone.now)

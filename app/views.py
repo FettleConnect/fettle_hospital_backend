@@ -489,25 +489,31 @@ class UpdateCommunity(APIView):
             return Response({"msg": str(e), "error": 1})
 class EscalationManagementView(APIView):
     authentication_classes = [JWTAuthentication]
-    def get(self,request):
+    def get(self, request):
         try:
-            admin_id=request.user_id
-            role=request.role
-           
+            admin_id = request.user_id
+            role = request.role
+            start_date = request.query_params.get('start_date')
+            end_date = request.query_params.get('end_date')
+
+            hospital_ids = []
             if role == 'user':
-                try:
-                    user=Hospital_user_model.objects.get(id=admin_id)
-                except Exception as e:
-                    return Response({"msg": str(e), "error": 0})
-                if user.escalation_engagement:
-                    pass
-                else:
-                    return Response({"msg": "Invalid user", "error": 0})
-            queryset = EscalationModel.objects.select_related('patient').all()
+                hospital_user = Hospital_user_model.objects.get(id=admin_id)
+                hospital_ids.append(hospital_user.hospital.id)
+            else:
+                # Admin sees all
+                hospital_ids = list(Hospital_model.objects.values_list('id', flat=True))
+
+            queryset = EscalationModel.objects.select_related('patient', 'patient__hospital').filter(
+                patient__hospital_id__in=hospital_ids
+            )
+
+            if start_date and end_date:
+                queryset = queryset.filter(escalated_at__date__range=[start_date, end_date])
 
             escalations = [
                 {
-                    "id": e.id,
+                    "id": str(e.id),
                     "issue_description": e.issue_description,
                     "status": e.status,
                     "department": e.department,
@@ -516,14 +522,11 @@ class EscalationManagementView(APIView):
                     "resolution_notes": e.resolution_notes,
                     "patient_name": e.patient.patient_name,
                     "hospital_name": e.patient.hospital.name,
-                    "phone_number": "+91"+e.patient.mobile_no,
+                    "mobile_no": "+91" + e.patient.mobile_no
                 }
-                for e in queryset
+                for e in queryset.order_by('-escalated_at')
             ]
-            
-           
-            
-            return Response({"data":list(escalations),"error":0})
+            return Response({"data": escalations, "error": 0})
         except Exception as e:
             return Response({"msg": str(e), "error": 1})
 class fetchpatients(APIView):
@@ -1879,6 +1882,48 @@ class tab_access(APIView):
             
         except Exception as e:
             return Response({"error":1,"msg":str(e)})
+
+class CampaignView(APIView):
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        try:
+            hospital_id = Hospital_user_model.objects.get(id=request.user_id).hospital.id
+            campaigns = Campaign.objects.filter(hospital_id=hospital_id).order_by('-created_at')
+            
+            data = []
+            for c in campaigns:
+                # Aggregate stats for each campaign
+                total_calls = c.calls.count()
+                connected = c.calls.filter(calling_process='connected').count()
+                
+                data.append({
+                    "id": str(c.id),
+                    "name": c.name,
+                    "purpose": c.purpose,
+                    "status": c.status,
+                    "created_at": c.created_at,
+                    "filters": {
+                        "start_date": c.start_date,
+                        "end_date": c.end_date,
+                        "unconnected_only": c.unconnected_only
+                    },
+                    "stats": {
+                        "total_calls": total_calls,
+                        "connected_calls": connected
+                    }
+                })
+            return Response({"data": data, "error": 0})
+        except Exception as e:
+            return Response({"msg": str(e), "error": 1})
+
+    def delete(self, request):
+        try:
+            campaign_id = request.query_params.get('id')
+            Campaign.objects.filter(id=campaign_id).delete()
+            return Response({"msg": "Campaign deleted", "error": 0})
+        except Exception as e:
+            return Response({"msg": str(e), "error": 1})
 
 
 

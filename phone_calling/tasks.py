@@ -64,6 +64,16 @@ def call_outbound_task(json_payload):
             patient_obj= Patient_model.objects.get(id=json_payload["metadata"]["patient_id"])
         except Exception as e:
             patient_obj=None
+        
+        campaign_id = json_payload["metadata"].get("campaign_id")
+        campaign_obj = None
+        if campaign_id:
+            from app.models import Campaign
+            try:
+                campaign_obj = Campaign.objects.get(id=campaign_id)
+            except:
+                pass
+
         endedReason=""
         message_s3_link=None
         audio_link=None
@@ -73,6 +83,7 @@ def call_outbound_task(json_payload):
             status=status,
             assistant_id=assistant_id,
             patient_id=patient_obj,
+            campaign=campaign_obj,
             endedReason=endedReason,
             message_s3_link=message_s3_link,
             audio_link=audio_link,

@@ -450,7 +450,7 @@ def process_outbound_calls(json_payload):
 def inbound_call_task(json_payload):
     try:
         sleep(1)
-                    token = os.getenv('VAPI_TOKEN')
+        token = os.getenv('VAPI_TOKEN')
         vapi_id=str(json_payload["id"])
         print("vapi_id--->",vapi_id)
         url = f"https://api.vapi.ai/call/{vapi_id}"
@@ -529,7 +529,7 @@ def process_inbound_calls(json_payload):
         print("db_outbound_hospital_id->",db_outbound_hospital_id)
         vapi_id=json_payload["vapi_id"]
         patient_idd=json_payload['patient_id']
-                    token = os.getenv('VAPI_TOKEN')
+        token = os.getenv('VAPI_TOKEN')
         url = f"https://api.vapi.ai/call/{vapi_id}"
         headers = {
         "Authorization": f"Bearer {token}",

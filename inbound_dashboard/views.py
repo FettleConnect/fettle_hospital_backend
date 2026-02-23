@@ -470,11 +470,10 @@ class EscalationEngagement_inbound(APIView):
 
             status_qs = (
                 EscalationModel_inbound.objects
+                .filter(escalated_at__date__gte=start_date, escalated_at__date__lte=end_date)
                 .values('status')
                 .annotate(value=Count('id'))
             )
-            for row in status_qs:
-                print(row['status'])
             dict_present={
                 "Pending":False,
                 "In-progress":False,
@@ -502,24 +501,28 @@ class EscalationEngagement_inbound(APIView):
             # === 3. Recent Escalations ===
             recent_qs = (
                 EscalationModel_inbound.objects
+                .filter(escalated_at__date__gte=start_date, escalated_at__date__lte=end_date)
                 .select_related('patient')
-                .order_by('-escalated_at')[:5]
+                .order_by('-escalated_at')[:10]
             )
 
             recent_escalations = []
             for i, esc in enumerate(recent_qs, start=1):
                 recent_escalations.append({
                     "id": esc.id,
-                    "patient": esc.patient.to_phone_numnber,
+                    "patient": esc.patient.from_phone_number,
                     "issue": esc.issue_description,
                     "status": esc.status,
                     "time": naturaltime(esc.escalated_at)
                 })
-            total_escalations = EscalationModel_inbound.objects.count()
+            total_escalations = EscalationModel_inbound.objects.filter(
+                escalated_at__date__gte=start_date, escalated_at__date__lte=end_date
+            ).count()
             avg_resolution_time = EscalationModel_inbound.objects.filter(
                 status='resolved',
                 resolved_at__isnull=False,
-               
+                escalated_at__date__gte=start_date,
+                escalated_at__date__lte=end_date
             ).annotate(
                 resolution_duration=ExpressionWrapper(
                     F('resolved_at') - F('escalated_at'),
@@ -529,19 +532,19 @@ class EscalationEngagement_inbound(APIView):
                 avg_time=Avg('resolution_duration')
             )['avg_time']
 
-            # Step 2: Convert to minutes
-            avg_resolution_minutes = np.round(avg_resolution_time.total_seconds() / 60,2) if avg_resolution_time else 0
+            # Step 2: Convert to days
+            avg_resolution_days = np.round(avg_resolution_time.total_seconds() / (24 * 3600), 2) if avg_resolution_time else 0
             
 
             resolved_today = EscalationModel_inbound.objects.filter(
                 status='resolved',
-                resolved_at__date=now,
+                resolved_at__date=timezone.now().date(),
                
             ).count()
             
             meta_data={
                 "total_escalations":total_escalations,
-                "avg_resolution_time":avg_resolution_minutes,
+                "avg_resolution_time":avg_resolution_days,
                 "resolved_today":resolved_today
 
             }

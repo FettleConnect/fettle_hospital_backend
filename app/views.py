@@ -1391,12 +1391,14 @@ class EscalationEngagement(APIView):
             }
 
             status_qs = (
-                EscalationModel.objects.filter(patient__hospital=user_id)
+                EscalationModel.objects.filter(
+                    patient__hospital=user_id,
+                    escalated_at__date__gte=start_date,
+                    escalated_at__date__lte=end_date
+                )
                 .values('status')
                 .annotate(value=Count('id'))
             )
-            for row in status_qs:
-                print(row['status'])
             dict_present={
                 "Pending":False,
                 "In-progress":False,
@@ -1429,7 +1431,7 @@ class EscalationEngagement(APIView):
                     escalated_at__date__lte=end_date
                 )
                 .select_related('patient')
-                .order_by('-escalated_at')
+                .order_by('-escalated_at')[:10]
             )
 
             recent_escalations = []
@@ -1450,7 +1452,9 @@ class EscalationEngagement(APIView):
             avg_resolution_time = EscalationModel.objects.filter(
                 status='resolved',
                 resolved_at__isnull=False,
-                patient__hospital=user_id
+                patient__hospital=user_id,
+                escalated_at__date__gte=start_date,
+                escalated_at__date__lte=end_date
             ).annotate(
                 resolution_duration=ExpressionWrapper(
                     F('resolved_at') - F('escalated_at'),
@@ -1466,7 +1470,7 @@ class EscalationEngagement(APIView):
 
             resolved_today = EscalationModel.objects.filter(
                 status='resolved',
-                resolved_at__date=now,
+                resolved_at__date=timezone.now().date(),
                 patient__hospital=user_id
             ).count()
 

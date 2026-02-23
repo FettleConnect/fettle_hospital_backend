@@ -887,7 +887,11 @@ class KPISummary(APIView):
                 escalated_change = 100.0 if escalated_this_month > 0 else 0.0
                 escalated_trend = "up" if escalated_this_month > 0 else "flat"
             
-            total_escalation = EscalationModel.objects.filter(patient__hospital=user_id).count()
+            total_escalation = EscalationModel.objects.filter(
+                patient__hospital=user_id,
+                escalated_at__date__gte=start_of_this_month,
+                escalated_at__date__lte=today
+            ).count()
             escalation_card = {
                 "title": "Escalated Issues",
                 "value": str(total_escalation),
@@ -1432,7 +1436,11 @@ class EscalationEngagement(APIView):
                     "mobile_no": "+91"+esc.patient.mobile_no,
                     "time": naturaltime(esc.escalated_at)
                 })
-            total_escalations = EscalationModel.objects.filter(patient__hospital=user_id).count()
+            total_escalations = EscalationModel.objects.filter(
+                patient__hospital=user_id,
+                escalated_at__date__gte=start_date,
+                escalated_at__date__lte=end_date
+            ).count()
             avg_resolution_time = EscalationModel.objects.filter(
                 status='resolved',
                 resolved_at__isnull=False,

@@ -149,7 +149,7 @@ def json_audio(patient_id,text,called_at,duration):
     - `true` if there was an emergency, complaint, critical issue, or request for senior intervention.
 
     8. **called_by**
-    - Always `"Vapi Agent"` unless another specific staff name is clearly mentioned.
+    - Always `"CloudConnect Agent"` unless another specific staff name is clearly mentioned.
 
     Return **only valid JSON** as per the above schema — no explanations, text, or additional formatting.
 """
@@ -280,7 +280,7 @@ def process_outbound_calls(json_payload):
                         call_community = requests.post(url_community,headers=headers_url,json=community_payload).json()
                 else:
                     call_progress='not_connected'
-                    call_feedback_payload={"call_outcome":"no_feedback","call_status":"not_connected","called_by":"Vapi Agent","community_added":False,"escalation_required":False,"patient_id":patient_idd,"remarks":False,"revisit_encouraged":False,"called_at":started_at}     
+                    call_feedback_payload={"call_outcome":"no_feedback","call_status":"not_connected","called_by":"CloudConnect Agent","community_added":False,"escalation_required":False,"patient_id":patient_idd,"remarks":False,"revisit_encouraged":False,"called_at":started_at}     
                     url_call=url_backend+"/api/callfeedback/"
                     call_res = requests.post(url_call,headers=headers_url,json=call_feedback_payload).json()
                     print("call_res-->",call_res,call_feedback_payload)
@@ -411,7 +411,7 @@ def process_outbound_calls(json_payload):
                             ##call api
                 else:
                     call_progress='not_connected'
-                    call_feedback_payload={"call_outcome":"no_feedback","call_status":"not_connected","called_by":"Vapi Agent","community_added":False,"escalation_required":False,"patient_id":patient_idd,"remarks":False,"revisit_encouraged":False,"called_at":started_at}     
+                    call_feedback_payload={"call_outcome":"no_feedback","call_status":"not_connected","called_by":"CloudConnect Agent","community_added":False,"escalation_required":False,"patient_id":patient_idd,"remarks":False,"revisit_encouraged":False,"called_at":started_at}     
                     url_call=url_backend+"/api/callfeedback/"
                     call_res = requests.post(url_call,headers=headers_url,json=call_feedback_payload).json()
                     print("call_res-->",call_res,call_feedback_payload)
@@ -638,7 +638,7 @@ def process_inbound_calls(json_payload):
             else:
                 print("calling api")
                 call_progress="not_connected"
-                call_feedback_payload={"call_outcome":"no_feedback","call_status":"not_connected","called_by":"Vapi Agent","community_added":False,"escalation_required":False,"patient_id":patient_idd,"remarks":False,"revisit_encouraged":False,"called_at":started_at}
+                call_feedback_payload={"call_outcome":"no_feedback","call_status":"not_connected","called_by":"CloudConnect Agent","community_added":False,"escalation_required":False,"patient_id":patient_idd,"remarks":False,"revisit_encouraged":False,"called_at":started_at}
                 url_call=url_backend+"/api/callfeedback_inbound/"
                 call_res = requests.post(url_call,headers=headers_url,json=call_feedback_payload).json()
                 print("call_res-->",call_res,call_feedback_payload)

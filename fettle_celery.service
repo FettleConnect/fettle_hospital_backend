@@ -1,0 +1,17 @@
+[Unit]
+Description=Celery Worker for Fettle Backend
+After=network.target redis.service
+
+[Service]
+Type=forking
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/fettle_backend
+EnvironmentFile=/home/fettle_backend/.env
+# Using -P gevent for better concurrency with AI API calls
+ExecStart=/home/fettle_backend/env/bin/celery -A project worker -l info -P gevent --detach
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

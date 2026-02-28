@@ -112,7 +112,7 @@ def json_audio(patient_id,text,called_at,duration):
     "call_outcome": "string (positive/negative/escalated/no_feedback)",
     "remarks": "string (brief summary of the call including key factor i..e time,medicine, language barrier, etc)",
     "issue_description": "string (detailed explanation if escalation_required is true, otherwise empty string)",
-    "called_by": "Vapi Agent",
+    "called_by": "CloudConnect Agent",
     "community_added": "boolean",
     "revisit_encouraged": "boolean",
     "escalation_required": "boolean"
@@ -192,102 +192,148 @@ def read_from_s3_buket(bucket_name,key):
         return {"error":1,"errorMsg":str(e)}
 @shared_task
 def process_outbound_calls(json_payload):
-    if json_payload["is_livekit"]:
-        try:
-            db_outbound_hospital_id=json_payload["id"]
-            print("db_outbound_hospital_id->",db_outbound_hospital_id)
-            vapi_id=json_payload["vapi_id"]
-            patient_idd=json_payload['patient_id']
-            mobile_no=json_payload["mobile_no"]
-            hospital_name=json_payload["hospital_name"]
-            endedReason=""
-            task_id_process = process_outbound_calls.request.id
-            status="ended"
-            transcript=read_from_s3_buket(settings.LIVEKIT_BUCKET_NAME,f"transcripts/{vapi_id}.json")
-            calls_metadata=read_from_s3_buket(settings.LIVEKIT_BUCKET_NAME,f"calls/{vapi_id}.json")
-            if transcript["error"]==0 and calls_metadata["error"]==0:
-                transcript=json.loads(transcript["text"])
-                calls_metadata=json.loads(calls_metadata["text"])
-                recording_url="s3://"+settings.LIVEKIT_BUCKET_NAME+"/"+"video_record"+"/"+vapi_id+".ogg"
-                started_at=calls_metadata["dialed_at"]
-                ended_at=calls_metadata["ended_at"]
-                text_message=""
-                for i in transcript["items"]:
-                    if i["type"] == "message":
-                        text_message+=i["role"] + " : " + i["content"][0] + "\n"
-                url_backend="https://hospital.fettleconnect.com:8000"
-                login_url=url_backend+"/api/login/"
-                payload = {
-                    "email": "admin@gmail.com",
-                    "password": "admin",
-                    "is_admin": True
+    try:
+        db_outbound_hospital_id=json_payload["id"]
+        print("db_outbound_hospital_id->",db_outbound_hospital_id)
+        vapi_id=json_payload["vapi_id"] # room_name
+        patient_idd=json_payload['patient_id']
+        mobile_no=json_payload["mobile_no"]
+        hospital_name=json_payload["hospital_name"]
+        endedReason=""
+        task_id_process = process_outbound_calls.request.id
+        status="ended"
+        
+        # Pull data from LiveKit S3 storage
+        transcript=read_from_s3_buket(settings.LIVEKIT_BUCKET_NAME,f"transcripts/{vapi_id}.json")
+        calls_metadata=read_from_s3_buket(settings.LIVEKIT_BUCKET_NAME,f"calls/{vapi_id}.json")
+        
+        if transcript["error"]==0 and calls_metadata["error"]==0:
+            transcript=json.loads(transcript["text"])
+            calls_metadata=json.loads(calls_metadata["text"])
+            recording_url="s3://"+settings.LIVEKIT_BUCKET_NAME+"/"+"video_record"+"/"+vapi_id+".ogg"
+            started_at=calls_metadata["dialed_at"]
+            ended_at=calls_metadata["ended_at"]
+            text_message=""
+            for i in transcript["items"]:
+                if i["type"] == "message":
+                    text_message+=i["role"] + " : " + i["content"][0] + "\n"
+            
+            url_backend="https://hospital.fettleconnect.com:8000"
+            login_url=url_backend+"/api/login/"
+            payload = {
+                "email": "admin@gmail.com",
+                "password": "admin",
+                "is_admin": True
+            }
+            res_login=requests.post(login_url,json=payload).json()
+            token=res_login["token"]
+            headers_url = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json"
+            }
+            
+            call_duration = round((datetime.fromisoformat(ended_at) - datetime.fromisoformat(started_at)).total_seconds() / 60, 2)
+            json_response=json_audio(patient_idd,text_message,started_at,call_duration)
+            call_progress=json_response['call_status']
+            
+            if json_response['call_outcome']=='negative' or json_response['call_outcome']=='escalated':
+                json_response['escalation_required']=True
+            
+            department=Patient_model.objects.get(id=patient_idd).department
+            
+            if "error" not in json_response and json_response['call_status']=='connected':
+                started_at_utc = datetime.fromisoformat(calls_metadata["dialed_at"])
+                started_at_utc = pytz.utc.localize(started_at_utc)
+                started_at_ist = started_at_utc.astimezone(pytz.timezone("Asia/Kolkata")).replace(tzinfo=None)
+                started_at_ist = started_at_ist.isoformat(sep=" ", timespec="seconds")
+
+                call_feedback_payload={
+                    "call_duration":call_duration,
+                    "call_outcome":json_response["call_outcome"],
+                    "call_status":json_response["call_status"],
+                    "called_at":started_at_ist,
+                    "called_by":json_response["called_by"],
+                    "community_added":json_response["community_added"],
+                    "escalation_required":json_response["escalation_required"],
+                    "patient_id":patient_idd,
+                    "remarks":json_response["remarks"],
+                    "revisit_encouraged":json_response["revisit_encouraged"]
                 }
-                res_login=requests.post(login_url,json=payload).json()
-                token=res_login["token"]
-                headers_url = {
-                    "Authorization": f"Bearer {token}",
-                    "Content-Type": "application/json"
-                }
-                call_progress='not_happened'
-                call_duration = round((datetime.fromisoformat(ended_at) - datetime.fromisoformat(started_at)).total_seconds() / 60, 2)
-                json_response=json_audio(patient_idd,text_message,started_at,call_duration)
-                call_progress=json_response['call_status']
-                if json_response['call_outcome']=='negative' or json_response['call_outcome']=='escalated':
-                    json_response['escalation_required']=True
-                if json_response['call_status']=='not_connected':
-                    json_response['escalation_required']=False
-                    json_response['community_added']=False
-                department=Patient_model.objects.get(id=patient_idd).department
-                print("json_response--->",json_response)
-                if "error" not in json_response and json_response['call_status']=='connected':
-                    started_at_utc = datetime.fromisoformat(calls_metadata["dialed_at"])
-                    started_at_utc = pytz.utc.localize(started_at_utc)
+                url_call=url_backend+"/api/callfeedback/"
+                requests.post(url_call,headers=headers_url,json=call_feedback_payload)
 
-                    started_at_ist = started_at_utc.astimezone(
-                        pytz.timezone("Asia/Kolkata")
-                    ).replace(tzinfo=None)
-                    started_at_ist = started_at_ist.isoformat(sep=" ", timespec="seconds")
+                if json_response['escalation_required']:
+                    escalation_payload={"patient_id":patient_idd,"issue_description":json_response['remarks'],"department":department}
+                    url_escalation=url_backend+"/api/escalationfeedback/"
+                    patient = Patient_model.objects.get(id=patient_idd)
+                    
+                    ended_at_utc = datetime.fromisoformat(calls_metadata["ended_at"])
+                    ended_at_utc = pytz.utc.localize(ended_at_utc)
+                    ended_at_ist = ended_at_utc.astimezone(pytz.timezone("Asia/Kolkata")).replace(tzinfo=None)
 
-                    call_feedback_payload={"call_duration":call_duration,"call_outcome":json_response["call_outcome"],"call_status":json_response["call_status"],"called_at":started_at_ist,"called_by":json_response["called_by"],"community_added":json_response["community_added"],"escalation_required":json_response["escalation_required"],"patient_id":patient_idd,"remarks":json_response["remarks"],"revisit_encouraged":json_response["revisit_encouraged"]}
-                    url_call=url_backend+"/api/callfeedback/"
-                    call_res = requests.post(url_call,headers=headers_url,json=call_feedback_payload).json()
-                    print("call_res1-->",call_res,call_feedback_payload)
-                    if json_response['escalation_required']==True:
-                        escalation_payload={"patient_id":patient_idd,"issue_description":json_response['remarks'],"department":department}
-                        url_escalation=url_backend+"/api/escalationfeedback/"
-                        patient = Patient_model.objects.get(id=patient_idd)
+                    message = (
+                        f"patient_name: {patient.patient_name}\n"
+                        f"mobile_no: {patient.mobile_no}\n"
+                        f"escalated_At: {ended_at_ist}\n\n"
+                        f"issue_description: {json_response['remarks']}")
+                    cloudconnect_whatsapp_msg(message)
+                    requests.post(url_escalation,headers=headers_url,json=escalation_payload)
 
-                        
-                        ended_at_utc = datetime.fromisoformat(calls_metadata["ended_at"])
-                        ended_at_utc = pytz.utc.localize(ended_at_utc)
+                if json_response['community_added']:
+                    community_payload={"patient_id":patient_idd,"engagement_type":"post","department":department}
+                    url_community=url_backend+"/api/communityfeedback/"
+                    requests.post(url_community,headers=headers_url,json=community_payload)
+            else:
+                call_progress='not_connected'
+                call_feedback_payload={
+                    "call_outcome":"no_feedback",
+                    "call_status":"not_connected",
+                    "called_by":"CloudConnect Agent",
+                    "community_added":False,
+                    "escalation_required":False,
+                    "patient_id":patient_idd,
+                    "remarks":"Call not connected",
+                    "revisit_encouraged":False,
+                    "called_at":started_at
+                }     
+                url_call=url_backend+"/api/callfeedback/"
+                requests.post(url_call,headers=headers_url,json=call_feedback_payload)
 
-                        ended_at_ist = ended_at_utc.astimezone(
-                            pytz.timezone("Asia/Kolkata")
-                        ).replace(tzinfo=None)
+            # Sync to Fettle standard storage
+            s3 = boto3.client(
+                "s3",
+                aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+                region_name=settings.AWS_S3_REGION_NAME,
+            )
+            unique_filename = f"{vapi_id}_{mobile_no}.txt"
+            s3.upload_fileobj(
+                BytesIO(text_message.encode("utf-8")),
+                settings.AWS_STORAGE_BUCKET_NAME,
+                f"{hospital_name}/{unique_filename}",
+                ExtraArgs={"ContentType":"text/plain"}
+            )
 
-                        message = (
-                            f"patient_name: {patient.patient_name}\n"
-                            f"mobile_no: {patient.mobile_no}\n"
-                            f"escalated_At: {ended_at_ist}\n\n"
-                            f"issue_description: {json_response['remarks']}")
-                        cloudconnect_whatsapp_msg(message)
-                        call_escalation = requests.post(url_escalation,headers=headers_url,json=escalation_payload).json()
+            # Update DB
+            objj=Outbound_Hospital.objects.get(id=db_outbound_hospital_id)
+            objj.status=status
+            objj.started_at=started_at
+            objj.ended_at=ended_at
+            objj.message_s3_link=f"s3://{settings.AWS_STORAGE_BUCKET_NAME}/{hospital_name}/{unique_filename}"
+            objj.audio_link=recording_url
+            objj.task_id_process=task_id_process
+            objj.calling_process=call_progress
+            objj.save()
+            
+            return {"error":0, "vapi_id":vapi_id}
+        else:
+            return {"error":1, "errorMsg":"LiveKit metadata or transcript not found"}
 
-                        ##call api
-                    if json_response['community_added']==True:
-                        community_payload={"patient_id":patient_idd,"engagement_type":"post","department":department}
-                        url_community=url_backend+"/api/communityfeedback/"
-                        call_community = requests.post(url_community,headers=headers_url,json=community_payload).json()
-                else:
-                    call_progress='not_connected'
-                    call_feedback_payload={"call_outcome":"no_feedback","call_status":"not_connected","called_by":"CloudConnect Agent","community_added":False,"escalation_required":False,"patient_id":patient_idd,"remarks":False,"revisit_encouraged":False,"called_at":started_at}     
-                    url_call=url_backend+"/api/callfeedback/"
-                    call_res = requests.post(url_call,headers=headers_url,json=call_feedback_payload).json()
-                    print("call_res-->",call_res,call_feedback_payload)
-                objj=Outbound_Hospital.objects.get(id=db_outbound_hospital_id)
-                objj.status=status
-                objj.endedReason=endedReason
-                objj.started_at=started_at
+    except Exception as e:  
+        tb = traceback.format_exc()
+        print("Traceback error:\n", str(e),"\n",tb,"\n")
+        return {"error":1,"errorMsg":str(e),"traceback": tb}
+
                 objj.ended_at=ended_at
                 objj.message_s3_link="s3://"+settings.LIVEKIT_BUCKET_NAME+"/"+"transcripts"+"/"+vapi_id+".json"
                 objj.audio_link=recording_url
@@ -450,54 +496,22 @@ def process_outbound_calls(json_payload):
             objj.task_id_process=task_id_process
             objj.calling_process=call_progress
             objj.save()
-            return {"error":0,"errorMsg":"","text_message":text_message}
-        except Exception as e:
-            tb = traceback.format_exc()
-            print("Traceback error:\n", str(e),"\n",tb,"\n")
-            return {"error":1,"errorMsg":str(e),"traceback": tb}
+            return {"error":0, "vapi_id":vapi_id}
+        else:
+            return {"error":1, "errorMsg":"LiveKit metadata or transcript not found"}
+
+    except Exception as e:  
+        tb = traceback.format_exc()
+        print("Traceback error:\n", str(e),"\n",tb,"\n")
+        return {"error":1,"errorMsg":str(e),"traceback": tb}
+
 @shared_task
 def inbound_call_task(json_payload):
-    try:
-        sleep(1)
-        token = os.getenv('VAPI_TOKEN')
-        vapi_id=str(json_payload["id"])
-        print("vapi_id--->",vapi_id)
-        url = f"https://api.vapi.ai/call/{vapi_id}"
+    # LiveKit SIP handles inbound calls by creating rooms.
+    # Logic for processing inbound rooms is handled by LiveKitWebhook.
+    print("Inbound call task (LiveKit) - room creation is handled by SIP participant.")
+    return {"status": "automated"}
 
-        headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json"
-    }   
-        task_id = inbound_call_task.request.id
-        sample_response = requests.get(url, headers=headers).json()
-        
-        vapi_response=sample_response
-        print("vapi_response--->",vapi_response)
-        to_phone_number=sample_response["customer"]["number"]
-        from_phone_number=sample_response["artifact"]["variableValues"]["phoneNumber"]["number"]
-        status=vapi_response["status"]
-        endedReason="" if "endedReason" not in vapi_response else vapi_response["endedReason"]
-        recording_url="" if "recordingUrl" not in vapi_response else vapi_response["recordingUrl"]
-        started_at=None if "startedAt" not in vapi_response else vapi_response["startedAt"]
-        ended_at=None if "endedAt" not in vapi_response else vapi_response["endedAt"]
-        text_message=""
-        
-        if "messages" not in vapi_response:
-            message_s3_link=""
-        else:
-            messages_response=vapi_response["messages"]
-            
-            for i in messages_response[1:]:
-                # print("i-->",i)
-                if ("message" in i) and ("role" in i):
-                    text_message += f"{i['role']}: {i['message']}\n\n"
-        s3 = boto3.client(
-            "s3",
-            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-            region_name=settings.AWS_S3_REGION_NAME,
-        )
-        unique_filename = f"{vapi_id}_{to_phone_number}.txt"
         content_type = "text/plain"
         text_message_bytes = text_message.encode("utf-8")  # convert string → bytes
         file_obj = BytesIO(text_message_bytes)

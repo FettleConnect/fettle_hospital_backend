@@ -140,6 +140,127 @@ class login_view(APIView):
         except Exception as e:
             return Response({"msg":str(e),"error":1})
 
+class doctor_login_view(APIView):
+    def post(self, request):
+        try:
+            email = request.data.get('email')
+            password = request.data.get('password')
+            try:
+                doctor = Doctor_model.objects.get(email=email)
+            except Doctor_model.DoesNotExist:
+                return Response({"msg": "Doctor not found", "error": 1})
+            
+            if check_password(password, doctor.password_hash):
+                token = create_token({
+                    "user_id": str(doctor.id),
+                    "email": doctor.email,
+                    "role": "Doctor",
+                    "hospital_id": str(doctor.hospital.id)
+                })
+                return Response({
+                    "msg": "Doctor login successful",
+                    "token": token,
+                    "doctor_name": doctor.name,
+                    "hospital_name": doctor.hospital.name,
+                    "error": 0
+                })
+            else:
+                return Response({"msg": "Invalid password", "error": 1})
+        except Exception as e:
+            return Response({"msg": str(e), "error": 1})
+
+class MediVoiceSessionView(APIView):
+    authentication_classes = [JWTAuthentication]
+    def post(self, request):
+        try:
+            doctor_id = request.user_id
+            doctor = Doctor_model.objects.get(id=doctor_id)
+            data = request.data
+            
+            session = MediVoiceSession.objects.create(
+                doctor=doctor,
+                patient_name=data.get('patientName'),
+                patient_mobile=data.get('patientMobile'),
+                patient_email=data.get('patientEmail'),
+                overall_summary=data.get('overallSummary'),
+                meta_data=data.get('metaData')
+            )
+            
+            # Add transcriptions
+            transcriptions = data.get('transcriptions', [])
+            for t in transcriptions:
+                MediVoiceTranscription.objects.create(
+                    session=session,
+                    speaker=t.get('speaker'),
+                    text=t.get('text'),
+                    timestamp=t.get('timestamp', 0.0)
+                )
+            
+            return Response({"msg": "Session saved", "session_id": str(session.id), "error": 0})
+        except Exception as e:
+            return Response({"msg": str(e), "error": 1})
+
+    def get(self, request):
+        try:
+            doctor_id = request.user_id
+            sessions = MediVoiceSession.objects.filter(doctor_id=doctor_id).order_by('-created_at')
+            data = []
+            for s in sessions:
+                data.append({
+                    "id": str(s.id),
+                    "patientName": s.patient_name,
+                    "patientMobile": s.patient_mobile,
+                    "createdAt": s.created_at,
+                    "transcriptionCount": s.transcriptions.count()
+                })
+            return Response({"data": data, "error": 0})
+        except Exception as e:
+            return Response({"msg": str(e), "error": 1})
+
+class DoctorTranscriptionView(APIView):
+    authentication_classes = [JWTAuthentication]
+    def get(self, request):
+        try:
+            # For Hospital Admins to see all doctors' sessions
+            user_id = Hospital_user_model.objects.get(id=request.user_id).hospital.id
+            doctor_id = request.query_params.get('doctor_id')
+            
+            query = MediVoiceSession.objects.filter(doctor__hospital_id=user_id)
+            if doctor_id:
+                query = query.filter(doctor_id=doctor_id)
+            
+            sessions = query.select_related('doctor').order_by('-created_at')
+            data = []
+            for s in sessions:
+                transcriptions = s.transcriptions.all().order_by('timestamp')
+                data.append({
+                    "id": str(s.id),
+                    "doctorName": s.doctor.name,
+                    "doctorDepartment": s.doctor.department,
+                    "patientName": s.patient_name,
+                    "patientMobile": s.patient_mobile,
+                    "overallSummary": s.overall_summary,
+                    "metaData": s.meta_data,
+                    "createdAt": s.created_at,
+                    "transcriptions": [
+                        {
+                            "speaker": t.speaker,
+                            "text": t.text,
+                            "timestamp": t.timestamp
+                        } for t in transcriptions
+                    ]
+                })
+            
+            doctors = Doctor_model.objects.filter(hospital_id=user_id).values('id', 'name', 'department')
+            
+            return Response({
+                "sessions": data,
+                "doctors": list(doctors),
+                "error": 0
+            })
+        except Exception as e:
+            return Response({"msg": str(e), "error": 1})
+
 class patient_insert_view(APIView):
     authentication_classes = [JWTAuthentication,]
     def post(self, request):

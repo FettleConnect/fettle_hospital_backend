@@ -257,6 +257,44 @@ class Campaign(models.Model):
     def __str__(self):
         return self.name
 
+class Doctor_model(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    hospital = models.ForeignKey(Hospital_model, on_delete=models.CASCADE, related_name='doctors')
+    name = models.CharField(max_length=255)
+    email = models.EmailField(unique=True)
+    password_hash = models.TextField()
+    department = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    def save(self, *args, **kwargs):
+        if not self.password_hash.startswith('pbkdf2_'):
+            self.password_hash = make_password(self.password_hash)
+        super().save(*args, **kwargs)
+    
+    def __str__(self):
+        return f"{self.name} ({self.department})"
+
+class MediVoiceSession(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    doctor = models.ForeignKey(Doctor_model, on_delete=models.CASCADE, related_name='sessions')
+    patient_name = models.CharField(max_length=255)
+    patient_mobile = models.CharField(max_length=20)
+    patient_email = models.EmailField(null=True, blank=True)
+    overall_summary = models.TextField(null=True, blank=True)
+    meta_data = models.JSONField(null=True, blank=True) # For Gemini metadata (BP, findings, etc)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Session: {self.patient_name} - {self.created_at.date()}"
+
+class MediVoiceTranscription(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    session = models.ForeignKey(MediVoiceSession, on_delete=models.CASCADE, related_name='transcriptions')
+    speaker = models.CharField(max_length=20) # 'doctor' or 'patient'
+    text = models.TextField()
+    timestamp = models.FloatField(default=0.0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
 class Outbound_Hospital(models.Model):
     CALLING_STATUS_CHOICES=[
         ("not_happened","NOT HAPPENED"),

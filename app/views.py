@@ -1,7 +1,7 @@
 from django.shortcuts import render
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from .models import Admin_model,Hospital_model,Patient_model,HospitalUploadLog,CallFeedbackModel,CommunityEngagementModel,EscalationModel,Patient_date_model,TextModel,Hospital_user_model,Outbound_Hospital,Outbound_assistant
+from .models import Admin_model,Hospital_model,Patient_model,HospitalUploadLog,CallFeedbackModel,CommunityEngagementModel,EscalationModel,Patient_date_model,TextModel,Hospital_user_model,Outbound_Hospital,Outbound_assistant,Campaign,Doctor_model,MediVoiceSession,MediVoiceTranscription,Inbound_Hospital,CallFeedbackModel_inbound,CommunityEngagementModel_inbound,EscalationModel_inbound
 from django.contrib.auth.hashers import check_password
 import pandas as pd
 from project.jwt_auth import create_token,JWTAuthentication
@@ -28,22 +28,6 @@ import uuid
 import os
 from django.http import FileResponse
 # Create your views here.
-def make_naive(dt, tz_name='Asia/Kolkata'):
-    import pytz
-
-    if dt is None:
-        return None
-
-    target_tz = pytz.timezone(tz_name)
-
-    # If datetime is timezone-aware → convert to IST → drop tzinfo
-    if dt.tzinfo is not None:
-        return dt.astimezone(target_tz).replace(tzinfo=None)
-
-    # If datetime is naive → assume UTC → convert to IST
-    return pytz.utc.localize(dt).astimezone(target_tz).replace(tzinfo=None)
-
-            
 def replace_placeholders_in_docx_preserving_styles(docx_path, output_path, replacements_dict):
     doc = Document(docx_path)
 
@@ -106,7 +90,18 @@ def get_ordinal(n):
     else:
         suffix = {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')
     return f"{n}{suffix}"
-     
+
+def make_naive(dt, tz_name='Asia/Kolkata'):
+    import pytz
+    if dt is None:
+        return None
+    target_tz = pytz.timezone(tz_name)
+    # If datetime is timezone-aware → convert to IST → drop tzinfo
+    if dt.tzinfo is not None:
+        return dt.astimezone(target_tz).replace(tzinfo=None)
+    # If datetime is naive → assume UTC → convert to IST
+    return pytz.utc.localize(dt).astimezone(target_tz).replace(tzinfo=None)
+
 class login_view(APIView):
     def post(self,request):
         try:
@@ -166,98 +161,6 @@ class doctor_login_view(APIView):
                 })
             else:
                 return Response({"msg": "Invalid password", "error": 1})
-        except Exception as e:
-            return Response({"msg": str(e), "error": 1})
-
-class MediVoiceSessionView(APIView):
-    authentication_classes = [JWTAuthentication]
-    def post(self, request):
-        try:
-            doctor_id = request.user_id
-            doctor = Doctor_model.objects.get(id=doctor_id)
-            data = request.data
-            
-            session = MediVoiceSession.objects.create(
-                doctor=doctor,
-                patient_name=data.get('patientName'),
-                patient_mobile=data.get('patientMobile'),
-                patient_email=data.get('patientEmail'),
-                overall_summary=data.get('overallSummary'),
-                meta_data=data.get('metaData')
-            )
-            
-            # Add transcriptions
-            transcriptions = data.get('transcriptions', [])
-            for t in transcriptions:
-                MediVoiceTranscription.objects.create(
-                    session=session,
-                    speaker=t.get('speaker'),
-                    text=t.get('text'),
-                    timestamp=t.get('timestamp', 0.0)
-                )
-            
-            return Response({"msg": "Session saved", "session_id": str(session.id), "error": 0})
-        except Exception as e:
-            return Response({"msg": str(e), "error": 1})
-
-    def get(self, request):
-        try:
-            doctor_id = request.user_id
-            sessions = MediVoiceSession.objects.filter(doctor_id=doctor_id).order_by('-created_at')
-            data = []
-            for s in sessions:
-                data.append({
-                    "id": str(s.id),
-                    "patientName": s.patient_name,
-                    "patientMobile": s.patient_mobile,
-                    "createdAt": s.created_at,
-                    "transcriptionCount": s.transcriptions.count()
-                })
-            return Response({"data": data, "error": 0})
-        except Exception as e:
-            return Response({"msg": str(e), "error": 1})
-
-class DoctorTranscriptionView(APIView):
-    authentication_classes = [JWTAuthentication]
-    def get(self, request):
-        try:
-            # For Hospital Admins to see all doctors' sessions
-            user_id = Hospital_user_model.objects.get(id=request.user_id).hospital.id
-            doctor_id = request.query_params.get('doctor_id')
-            
-            query = MediVoiceSession.objects.filter(doctor__hospital_id=user_id)
-            if doctor_id:
-                query = query.filter(doctor_id=doctor_id)
-            
-            sessions = query.select_related('doctor').order_by('-created_at')
-            data = []
-            for s in sessions:
-                transcriptions = s.transcriptions.all().order_by('timestamp')
-                data.append({
-                    "id": str(s.id),
-                    "doctorName": s.doctor.name,
-                    "doctorDepartment": s.doctor.department,
-                    "patientName": s.patient_name,
-                    "patientMobile": s.patient_mobile,
-                    "overallSummary": s.overall_summary,
-                    "metaData": s.meta_data,
-                    "createdAt": s.created_at,
-                    "transcriptions": [
-                        {
-                            "speaker": t.speaker,
-                            "text": t.text,
-                            "timestamp": t.timestamp
-                        } for t in transcriptions
-                    ]
-                })
-            
-            doctors = Doctor_model.objects.filter(hospital_id=user_id).values('id', 'name', 'department')
-            
-            return Response({
-                "sessions": data,
-                "doctors": list(doctors),
-                "error": 0
-            })
         except Exception as e:
             return Response({"msg": str(e), "error": 1})
 
@@ -480,7 +383,6 @@ class CallFeedbackView(APIView):
 
         except Exception as e:
             return Response({"msg": str(e), "error": 1})
-
 class EscalationfeedbackView(APIView):
     authentication_classes = [JWTAuthentication]
     def post(self,request):
@@ -513,8 +415,6 @@ class EscalationfeedbackView(APIView):
             return Response({"msg":"Escalation feedback recorded","error":0})
         except Exception as e:
             return Response({"msg": str(e), "error": 1})
-
-
 class UpdateEscalation(APIView):
     authentication_classes = [JWTAuthentication]
     def post(self,request):
@@ -543,8 +443,6 @@ class UpdateEscalation(APIView):
             return Response({"msg":"Escalation updated .","error":0})
         except Exception as e:
             return Response({"msg": str(e), "error": 1})
-
-
 class CommunityfeedbackView(APIView):
     authentication_classes = [JWTAuthentication]
     def post(self,request):
@@ -610,33 +508,25 @@ class UpdateCommunity(APIView):
             return Response({"msg": str(e), "error": 1})
 class EscalationManagementView(APIView):
     authentication_classes = [JWTAuthentication]
-    def get(self, request):
+    def get(self,request):
         try:
-            admin_id = request.user_id
-            role = request.role
-            start_date = request.query_params.get('start_date')
-            end_date = request.query_params.get('end_date')
-
-            hospital_ids = []
+            admin_id=request.user_id
+            role=request.role
+           
             if role == 'user':
-                hospital_user = Hospital_user_model.objects.get(id=admin_id)
-                hospital_ids.append(hospital_user.hospital.id)
-            else:
-                # Admin sees all
-                hospital_ids = list(Hospital_model.objects.values_list('id', flat=True))
-
-            queryset = EscalationModel.objects.select_related('patient', 'patient__hospital').filter(
-                patient__hospital_id__in=hospital_ids
-            )
-
-            if start_date and end_date:
-                queryset = queryset.filter(escalated_at__date__range=[start_date, end_date])
-
-            print(f"DEBUG: Found {queryset.count()} escalations for hospital_ids {hospital_ids} in range {start_date} to {end_date}")
+                try:
+                    user=Hospital_user_model.objects.get(id=admin_id)
+                except Exception as e:
+                    return Response({"msg": str(e), "error": 0})
+                if user.escalation_engagement:
+                    pass
+                else:
+                    return Response({"msg": "Invalid user", "error": 0})
+            queryset = EscalationModel.objects.select_related('patient').all()
 
             escalations = [
                 {
-                    "id": str(e.id),
+                    "id": e.id,
                     "issue_description": e.issue_description,
                     "status": e.status,
                     "department": e.department,
@@ -645,11 +535,13 @@ class EscalationManagementView(APIView):
                     "resolution_notes": e.resolution_notes,
                     "patient_name": e.patient.patient_name,
                     "hospital_name": e.patient.hospital.name,
-                    "mobile_no": "+91" + e.patient.mobile_no
                 }
-                for e in queryset.order_by('-escalated_at')
+                for e in queryset
             ]
-            return Response({"data": escalations, "error": 0})
+            
+           
+            
+            return Response({"data":list(escalations),"error":0})
         except Exception as e:
             return Response({"msg": str(e), "error": 1})
 class fetchpatients(APIView):
@@ -660,118 +552,58 @@ class fetchpatients(APIView):
             admin_id = request.user_id
             role = request.role
             hospital_ids=[]
-            print("role--->",role)
             if role == 'user':
-                hospital_users = Hospital_user_model.objects.get(id=admin_id)
-                hospital_ids.append(hospital_users.hospital.id)
+                hospital_user=Hospital_user_model.objects.get(id=admin_id)
+                hospital_ids.append(hospital_user.hospital.id)
             else:
-                restricted_hospital=list(
-                    Hospital_user_model.objects.filter(
-                        calllog_engagement=True
-                    ).values_list('hospital_id', flat=True).distinct()
-                )
-                all_hospital=list(
-                    Hospital_user_model.objects.filter(
-                        
-                    ).values_list('hospital_id', flat=True).distinct()
-                )
-                hospital_ids.extend(list(set(all_hospital) - set(restricted_hospital)))
+                hospital_ids = list(Hospital_model.objects.values_list('id', flat=True))
                 
-                
-            limit_param = request.query_params.get('limit', '').strip().lower()
-            raw_params = request.query_params.get('call_status','').strip().lower()
-            start_date_str = request.query_params.get('start_date', '').strip()
-            end_date_str = request.query_params.get('end_date', '').strip()
+            limit_param = request.query_params.get('limit', 'all').strip().lower()
             unconnected_only = request.query_params.get('unconnected_only', 'false').strip().lower() == 'true'
             
-            filter_params = set([s.strip().lower() for s in raw_params.split(',') if s.strip()])
-            
-            queryset = Patient_model.objects.select_related('hospital').filter(
-                hospital_id__in=hospital_ids
-            )
+            queryset = Patient_model.objects.filter(hospital_id__in=hospital_ids).order_by('-uploaded_at')
 
-            if start_date_str and end_date_str:
-                queryset = queryset.filter(uploaded_at__date__range=[start_date_str, end_date_str])
-
-            queryset = queryset.order_by('mobile_no', 'uploaded_at')
-
-            outbound_assistant_ids=Outbound_assistant.objects.filter(hospital_id__in=hospital_ids)
-            Outbound_Hospital_patients=list(Outbound_Hospital.objects.filter(assistant_id__in=outbound_assistant_ids).select_related("patient_id__hospital"))
+            # Build calling progress lookup
+            outbound_calls = Outbound_Hospital.objects.filter(patient_id__hospital_id__in=hospital_ids).select_related("patient_id")
             lookup = {}
-
-            for o in Outbound_Hospital_patients:
-                # print(o.patient)
-                key = (
-                    (o.patient_id.patient_name or '').strip().lower(),
-                    (o.patient_id.mobile_no or '').strip().lower(),
-                    (o.patient_id.hospital.name or '').strip().lower(),     # adjust if field name differs
-                )
-                if o.calling_process=='not_happened':
-                    if o.status=='in-progress':
-                        lookup[key]='in_progress'
-                    elif o.status=='queued':
-                        lookup[key]='queued'
-                    else:
-                        lookup[key]='not_connected'
-                else:
-                    lookup[key] = o.calling_process or "N/A"
-            # print("lookup-->",lookup)
-            # If 'limit' is not given, empty, or 'all' → fetch all
-            if limit_param in ['', 'all']:
-                patients = queryset
-            else:
-                try:
-                    limit = int(limit_param)
-                    patients = queryset[:limit]
-                except ValueError:
-                    return Response({"msg": "Invalid limit value", "error": 1})
-            # Preload all texts related to hospitals in one query
-            hospital_ids = {p.hospital.id for p in patients}
-            hospital_text_map = {
-                t.hospital_id: t.text
-                for t in TextModel.objects.filter(hospital_id__in=hospital_ids)
-            }
-            status_color_hex = {
-                "connected": "#28A745",
-                "not_connected": "#DC3545",
-                "queued": "#FFC107",
-                "in_progress": "#007BFF",
-            }
-            gray_color="#6C757D"
-            for p in patients:
-                key = (
-                    (p.patient_name or '').strip().lower(),
-                    (p.mobile_no or '').strip().lower(),
-                    (p.hospital.name or '').strip().lower(),
-                )
-                p.calling_progress = lookup.get(key, "N/A")
-                p.hex_color=status_color_hex.get(p.calling_progress,gray_color)
+            for o in outbound_calls:
+                if not o.patient_id: continue
+                p_id = str(o.patient_id.id)
                 
-            patient_data=[]
-            print(filter_params)
-            
-            for p in patients:
-                if len(filter_params)==0 or p.calling_progress.strip().lower() in filter_params:
-                    patient_data.append({
-                        "id": p.id,
-                        "patient_name": p.patient_name,
-                        "mobile_no": p.mobile_no,
-                        "department": p.department,
-                        "hospital_name": p.hospital.name,
-                        "whatsapp_link":f"https://web.whatsapp.com/send?phone={p.mobile_no}&text={hospital_text_map.get(p.hospital.id, '')}",
-                        "calling_progress":p.calling_progress,
-                        "color":p.hex_color,
-                        # "uploaded_at":p.uploaded_at
-                        "uploaded_at": make_naive(p.uploaded_at, tz_name='Asia/Kolkata'),
-                        
-                    })
-               
+                status = "not_connected"
+                if o.calling_process == 'connected': status = 'connected'
+                elif o.status == 'in-progress': status = 'in_progress'
+                elif o.status == 'queued': status = 'queued'
+                
+                # Best status ranking
+                rank = {"connected": 4, "in_progress": 3, "queued": 2, "not_connected": 1}
+                if rank.get(status, 0) > rank.get(lookup.get(p_id, "not_connected"), 0):
+                    lookup[p_id] = status
 
-            
-            
+            if limit_param != 'all':
+                try:
+                    queryset = queryset[:int(limit_param)]
+                except: pass
 
-            return Response({"data": patient_data,"count":len(patient_data), "error": 0})
+            patient_data = []
+            for p in queryset:
+                progress = lookup.get(str(p.id), "not_connected")
+                
+                # Apply UNCONNECTED ONLY filter
+                if unconnected_only and progress in ['connected', 'in_progress', 'queued']:
+                    continue
 
+                patient_data.append({
+                    "id": str(p.id),
+                    "patient_name": p.patient_name,
+                    "mobile_no": p.mobile_no,
+                    "department": p.department,
+                    "hospital_name": p.hospital.name,
+                    "calling_progress": progress,
+                    "uploaded_at": make_naive(p.uploaded_at)
+                })
+
+            return Response({"data": patient_data, "count": len(patient_data), "error": 0})
         except Exception as e:
             return Response({"msg": str(e), "error": 1})
 
@@ -795,7 +627,6 @@ class fetchrecentactivity(APIView):
                     "called_at": e.called_at,
                     "hospital":e.patient.hospital.name,
                     "patient_name": e.patient.patient_name,
-                    "mobile_no": "+91"+e.patient.mobile_no,
                     
                 }
                 for e in queryset_call
@@ -808,7 +639,7 @@ class fetchrecentactivity(APIView):
                     "escalated_at": e.escalated_at,
                     "hospital":e.patient.hospital.name,
                     "patient_name": e.patient.patient_name,
-                    "mobile_no": "+91"+e.patient.mobile_no,
+                    
                 }
                 for e in queryset_escalation
             ]   
@@ -819,7 +650,7 @@ class fetchrecentactivity(APIView):
                     "created_at": e.created_at,
                     "hospital":e.patient.hospital.name,
                     "patient_name": e.patient.patient_name,
-                    "mobile_no": "+91"+e.patient.mobile_no,
+                    
                 }
                 for e in queryset_community
             ]      
@@ -867,62 +698,51 @@ class KPISummary(APIView):
     authentication_classes = [JWTAuthentication]
     def get(self, request):
         try:
-            user_id = Hospital_user_model.objects.get(id=request.user_id).hospital.id
-            start_date_str = request.query_params.get('start_date')
-            end_date_str = request.query_params.get('end_date')
+            user_id= Hospital_user_model.objects.get(id=request.user_id).hospital.id
             
-            if start_date_str and end_date_str:
-                end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
-                start_of_this_month = datetime.strptime(start_date_str, "%Y-%m-%d").date()
-                # for trend, we look at an equal period before
-                delta = (end_date - start_of_this_month).days
-                start_of_prev_month = start_of_this_month - timedelta(days=delta if delta > 0 else 30)
-                today = end_date
-            else:
-                today = timezone.now().date()
-                start_of_this_month = today - timedelta(days=90)
-                start_of_prev_month = start_of_this_month - timedelta(days=90)
-
-            base_qs = CallFeedbackModel.objects.annotate(
-                effective_called_at=Coalesce('called_at', 'created_at')
-            ).filter(patient__hospital=user_id)
+            today = timezone.now().date()
+            start_of_this_week = today - timedelta(days=today.weekday())  # Monday
+            start_of_last_week = start_of_this_week - timedelta(days=7)
 
             # === Total calls ===
-            contact_this_month_count = base_qs.filter(
-                effective_called_at__date__gte=start_of_this_month,
-                effective_called_at__date__lte=today,
+            contact_this_week_count = CallFeedbackModel.objects.filter(
+                called_at__date__gte=start_of_this_week,
+                called_at__date__lte=today,
+                patient__hospital=user_id
             ).count()
 
-            contact_prev_month_count = base_qs.filter(
-                effective_called_at__date__gte=start_of_prev_month,
-                effective_called_at__date__lt=start_of_this_month,
+            contact_last_week_count = CallFeedbackModel.objects.filter(
+                called_at__date__gte=start_of_last_week,
+                called_at__date__lt=start_of_this_week,
+                patient__hospital=user_id
             ).count()
 
             # === Connected calls ===
-            connected_this_month = base_qs.filter(
+            connected_this_week = CallFeedbackModel.objects.filter(
                 call_status='connected',
-                effective_called_at__date__gte=start_of_this_month,
-                effective_called_at__date__lte=today,
+                called_at__date__gte=start_of_this_week,
+                called_at__date__lte=today,
+                patient__hospital=user_id
             )
 
-            connected_prev_month = base_qs.filter(
+            connected_last_week = CallFeedbackModel.objects.filter(
                 call_status='connected',
-                effective_called_at__date__gte=start_of_prev_month,
-                effective_called_at__date__lt=start_of_this_month,
+                called_at__date__gte=start_of_last_week,
+                called_at__date__lt=start_of_this_week,
+                patient__hospital=user_id
             )
 
-            connected_this_month_count = connected_this_month.count()
-            connected_prev_month_count = connected_prev_month.count()
+            connected_this_week_count = connected_this_week.count()
+            connected_last_week_count = connected_last_week.count()
 
             # === KPI 1: Total Patients Contacted ===
-            if contact_prev_month_count > 0:
-                contact_change = ((contact_this_month_count - contact_prev_month_count) / contact_prev_month_count) * 100
+            if contact_last_week_count > 0:
+                contact_change = ((contact_this_week_count - contact_last_week_count) / contact_last_week_count) * 100
                 contact_trend = "up" if contact_change > 0 else "down"
             else:
-                contact_change = 100.0 if contact_this_month_count > 0 else 0.0
-                contact_trend = "up" if contact_this_month_count > 0 else "flat"
-            
-            total_contacts = CallFeedbackModel.objects.filter(patient__hospital=user_id).distinct().count()
+                contact_change = 100.0 if contact_this_week_count > 0 else 0.0
+                contact_trend = "up" if contact_this_week_count > 0 else "flat"
+            total_contacts=CallFeedbackModel.objects.filter(patient__hospital=user_id).distinct().count()
             patients_contact = {
                 "title": "Total Patients Contacted",
                 "value": f"{total_contacts:,}",
@@ -933,22 +753,22 @@ class KPISummary(APIView):
             }
 
             # === KPI 2: Call Answer Rate ===
-            connect_this_month_rate = (connected_this_month_count / contact_this_month_count * 100) if contact_this_month_count > 0 else 0
-            connect_prev_month_rate = (connected_prev_month_count / contact_prev_month_count * 100) if contact_prev_month_count > 0 else 0
+            connect_this_week_rate = (connected_this_week_count / contact_this_week_count * 100) if contact_this_week_count > 0 else 0
+            connect_last_week_rate = (connected_last_week_count / contact_last_week_count * 100) if contact_last_week_count > 0 else 0
 
-            if connect_prev_month_rate > 0:
-                connect_change = connect_this_month_rate - connect_prev_month_rate
+            if connect_last_week_rate > 0:
+                connect_change = connect_this_week_rate - connect_last_week_rate
                 connect_trend = "up" if connect_change > 0 else "down"
             else:
-                connect_change = connect_this_month_rate
-                connect_trend = "up" if connect_this_month_rate > 0 else "flat"
-            
+                connect_change = connect_this_week_rate
+                connect_trend = "up" if connect_this_week_rate > 0 else "flat"
             try:
-                connected_total = CallFeedbackModel.objects.filter(patient__hospital=user_id, call_status='connected').values('patient').distinct().count()
-                connected_people_rate = np.round((connected_total / total_contacts) * 100, 2) if total_contacts > 0 else 0
-            except Exception:
-                connected_people_rate = 0
-
+                connected_people_rate = np.round((CallFeedbackModel.objects.filter(
+                patient__hospital=user_id,
+                call_status='connected'
+            ).values('patient').distinct().count()/total_contacts)*100,2)
+            except Exception as e:
+                connected_people_rate=0
             call_rate = {
                 "title": "Call Answer Rate",
                 "value": f"{connected_people_rate:.0f}%",
@@ -959,25 +779,23 @@ class KPISummary(APIView):
             }
 
             # === KPI 3: Community Conversion ===
-            community_this_month = connected_this_month.filter(community_added=True).count()
-            community_prev_month = connected_prev_month.filter(community_added=True).count()
+            community_this_week = connected_this_week.filter(community_added=True,patient__hospital=user_id).count()
+            community_last_week = connected_last_week.filter(community_added=True,patient__hospital=user_id).count()
 
-            community_this_month_rate = (community_this_month / connected_this_month_count * 100) if connected_this_month_count > 0 else 0
-            community_prev_month_rate = (community_prev_month / connected_prev_month_count * 100) if connected_prev_month_count > 0 else 0
+            community_this_week_rate = (community_this_week / connected_this_week_count * 100) if connected_this_week_count > 0 else 0
+            community_last_week_rate = (community_last_week / connected_last_week_count * 100) if connected_last_week_count > 0 else 0
 
-            if community_prev_month_rate > 0:
-                community_change = community_this_month_rate - community_prev_month_rate
+            if community_last_week_rate > 0:
+                community_change = community_this_week_rate - community_last_week_rate
                 community_trend = "up" if community_change > 0 else "down"
             else:
-                community_change = community_this_month_rate
-                community_trend = "up" if community_this_month_rate > 0 else "flat"
-            
+                community_change = community_this_week_rate
+                community_trend = "up" if community_this_week_rate > 0 else "flat"
             try:
-                community_total = CallFeedbackModel.objects.filter(community_added=True, patient__hospital=user_id).distinct().count()
-                community_members_rate = np.round((community_total / total_contacts) * 100, 2) if total_contacts > 0 else 0
-            except Exception:
-                community_members_rate = 0
-
+                community_members_rate=CallFeedbackModel.objects.filter(community_added=True,patient__hospital=user_id).distinct().count()/total_contacts
+                community_members_rate=np.round(community_members_rate*100,2)
+            except Exception as e:
+                community_members_rate=0
             community_card = {
                 "title": "Community Conversion",
                 "value": f"{community_members_rate:.0f}%",
@@ -986,32 +804,26 @@ class KPISummary(APIView):
                 "icon": "MessageCircle",
                 "color": "purple"
             }
-
-            # === KPI 4: Escalated Issues ===
-            escalated_this_month = EscalationModel.objects.filter(
-                patient__hospital=user_id,
-                escalated_at__date__gte=start_of_this_month,
+            # === KPI 4: Escalated Issues (from EscalationModel) ===
+            escalated_this_week = EscalationModel.objects.filter(
+                escalated_at__date__gte=start_of_this_week,
                 escalated_at__date__lte=today,
+                patient__hospital=user_id
             ).count()
 
-            escalated_prev_month = EscalationModel.objects.filter(
-                patient__hospital=user_id,
-                escalated_at__date__gte=start_of_prev_month,
-                escalated_at__date__lt=start_of_this_month,
+            escalated_last_week = EscalationModel.objects.filter(
+                escalated_at__date__gte=start_of_last_week,
+                escalated_at__date__lt=start_of_this_week,
+                patient__hospital=user_id
             ).count()
 
-            if escalated_prev_month > 0:
-                escalated_change = ((escalated_this_month - escalated_prev_month) / escalated_prev_month) * 100
+            if escalated_last_week > 0:
+                escalated_change = ((escalated_this_week - escalated_last_week) / escalated_last_week) * 100
                 escalated_trend = "up" if escalated_change > 0 else "down"
             else:
-                escalated_change = 100.0 if escalated_this_month > 0 else 0.0
-                escalated_trend = "up" if escalated_this_month > 0 else "flat"
-            
-            total_escalation = EscalationModel.objects.filter(
-                patient__hospital=user_id,
-                escalated_at__date__gte=start_of_this_month,
-                escalated_at__date__lte=today
-            ).count()
+                escalated_change = 100.0 if escalated_this_week > 0 else 0.0
+                escalated_trend = "up" if escalated_this_week > 0 else "flat"
+            total_escalation=EscalationModel.objects.filter(patient__hospital=user_id).count()
             escalation_card = {
                 "title": "Escalated Issues",
                 "value": str(total_escalation),
@@ -1021,130 +833,56 @@ class KPISummary(APIView):
                 "color": "orange"
             }
 
-            # === SPRINT 1 TABLE 1: KEY OUTCOMES ===
-            
-            # 1. Total Patient Interactions (Inbound + Outbound)
-            total_inbound = Inbound_Hospital.objects.filter(started_at__date__gte=start_of_this_month, started_at__date__lte=today).count()
-            total_outbound = base_qs.filter(effective_called_at__date__gte=start_of_this_month, effective_called_at__date__lte=today).count()
-            total_interactions = total_inbound + total_outbound
-            
-            interactions_card = {
-                "title": "Total Interactions",
-                "value": f"{total_interactions:,}",
-                "change": "New",
-                "trend": "up",
-                "icon": "Users",
-                "color": "blue"
-            }
-
-            # 2. Avg Call Resolution Time
-            avg_res_time = base_qs.filter(
-                effective_called_at__date__gte=start_of_this_month,
-                effective_called_at__date__lte=today
-            ).aggregate(avg=Avg(Cast('call_duration', FloatField())))['avg'] or 0
-            
-            resolution_card = {
-                "title": "Avg Resolution",
-                "value": f"{int(avg_res_time * 60)} sec",
-                "change": "Live",
-                "trend": "up",
-                "icon": "Clock",
-                "color": "green"
-            }
-
-            # 3. Appointment Conversion Rate
-            # Logic: (Appointments booked / Total appointment inquiry calls) * 100
-            # We filter by 'positive' outcome as proxy for booked for now
-            total_inquiries = base_qs.filter(effective_called_at__date__gte=start_of_this_month, effective_called_at__date__lte=today).count()
-            booked = base_qs.filter(call_outcome='positive', effective_called_at__date__gte=start_of_this_month, effective_called_at__date__lte=today).count()
-            conv_rate = (booked / total_inquiries * 100) if total_inquiries > 0 else 0
-            
-            conversion_card = {
-                "title": "Conversion Rate",
-                "value": f"{conv_rate:.1f}%",
-                "change": "Target 40%",
-                "trend": "up" if conv_rate > 40 else "down",
-                "icon": "TrendingUp",
-                "color": "purple"
-            }
-
-            # 4. No-Show Rate (Placeholder logic: 15% baseline minus improvements)
-            no_show_rate = 12.5 # Example fixed for now until hospital provides actual no-show logs
-            noshow_card = {
-                "title": "No-Show Rate",
-                "value": f"{no_show_rate}%",
-                "change": "-2.4%",
-                "trend": "down",
-                "icon": "UserX",
-                "color": "red"
-            }
 
             return Response({
                 "total_patients_contacted": patients_contact,
                 "call_answer_rate": call_rate,
                 "community_conversion": community_card,
-                "escalated_issues": escalation_card,
-                "interactions": interactions_card,
-                "resolution": resolution_card,
-                "conversion": conversion_card,
-                "noshow": noshow_card
+                "escalated_issues": escalation_card
             })
 
         except Exception as e:
             return Response({"msg": str(e), "error": 1})
 
 
-from django.db.models.functions import Coalesce
-
 class Patientengagement(APIView):
     authentication_classes = [JWTAuthentication]
 
     def get(self, request):
         try:
-            user_id = Hospital_user_model.objects.get(id=request.user_id).hospital.id
-            start_date_str = request.query_params.get('start_date')
-            end_date_str = request.query_params.get('end_date')
-
-            if start_date_str and end_date_str:
-                today = datetime.strptime(end_date_str, "%Y-%m-%d").date()
-                start_of_week = datetime.strptime(start_date_str, "%Y-%m-%d").date()
-            else:
-                today = timezone.now().date()
-                start_of_week = today - timedelta(days=90)  # default 90 days window
-
-            print("start_of_week--->",start_of_week,"today--->",today)
-            # === 1. Contacts per Day ===
+            user_id= Hospital_user_model.objects.get(id=request.user_id).hospital.id
+            today = timezone.now().date()
+            start_of_week = today - timedelta(days=7)  # Monday
+            print("start_of_week--->",start_of_week)
+            # === 1. Contacts per Day (Mon to Sun) ===
             contacts_qs = (
                 CallFeedbackModel.objects
-                .annotate(effective_called_at=Coalesce('called_at', 'created_at'))
-                .filter(effective_called_at__date__gte=start_of_week, effective_called_at__date__lte=today, patient__hospital=user_id)
-                .annotate(day=TruncDate('effective_called_at'))
+                .filter(called_at__date__gt=start_of_week,patient__hospital=user_id)
+                .annotate(day=TruncDate('called_at'))
                 .values('day')
                 .annotate(contacts=Count('id'))
             )
             
 
-            # Initialize map for the window
-            delta_days = (today - start_of_week).days
+            # Initialize all 7 days with 0 contacts
+            # day_map = {calendar.day_name[i][:3]: 0 for i in range(7)}  # {'Mon': 0, ..., 'Sun': 0}
             day_map={}
-            for i in range(delta_days + 1):
-                date_w=(start_of_week + timedelta(days=i))
-                day_map[date_w.strftime("%b %d")]=0
-            
+            for i in range(1,8):
+                date_w=(start_of_week+timedelta(days=i)).weekday()
+                day_map[calendar.day_name[date_w][:3]]=0
+            # print("ok")
+            # print(day_map.keys())
             for item in contacts_qs:
-                day_label = item['day'].strftime("%b %d")
-                if day_label in day_map:
-                    day_map[day_label] += item['contacts']
+                day = calendar.day_name[item['day'].weekday()][:3]
+                day_map[day] += item['contacts']
 
             contacts_data = [{"date": day, "contacts": count} for day, count in day_map.items()]
 
             # === 2. Call Answer Data ===
             print("user_id--->",user_id,"start_of_week--->",start_of_week)
             # Apply filter
-            filtered_queryset = CallFeedbackModel.objects.annotate(
-                effective_called_at=Coalesce('called_at', 'created_at')
-            ).filter(
-                effective_called_at__date__gte=start_of_week, effective_called_at__date__lte=today, patient__hospital=user_id
+            filtered_queryset = CallFeedbackModel.objects.filter(
+                Q(called_at__date__gt=start_of_week) & Q(patient__hospital=user_id)
             )
 
             # Total calls
@@ -1159,25 +897,25 @@ class Patientengagement(APIView):
                 avg_call_duration=Avg(Cast('call_duration', FloatField()))
             )
 
-            total_calls_all_period = result['total_calls'] or 0
+            total_calls_all_period = result['total_calls']
             average_call_duration = result['avg_call_duration']
-            meta_data={"total_calls_all_period":total_calls_all_period,"average_call_duration":np.round(average_call_duration,2) if average_call_duration is not None else 0}
-            
-            answered_calls = filtered_queryset.filter(call_status='connected').count()
-            print("answered_calls--->",answered_calls)
+            meta_data={"total_calls_all_period":total_calls_all_period,"average_call_duration":np.round(average_call_duration,2)}
+            answered_calls = CallFeedbackModel.objects.filter(call_status='connected', called_at__date__gt=start_of_week,patient__hospital=user_id).count()
             not_answered = total_calls - answered_calls
 
             call_answer_data = [{"name": "Answered", "value": np.round((answered_calls / total_calls) * 100, 2) if total_calls else 0, "color": "#10B981"}, {"name": "Not Answered", "value": np.round((not_answered / total_calls) * 100, 2) if total_calls else 0, "color": "#EF4444"}]
 
             # === 3. Feedback Data ===
             feedback_qs = (
-                filtered_queryset
+                CallFeedbackModel.objects
+                .filter(
+                    called_at__date__gt=start_of_week,
+                    patient__hospital=user_id
+                )
                 .values(
                     'call_outcome',
                     'remarks',
-                    "effective_called_at",
-                    'patient__patient_name',
-                    'patient__mobile_no'
+                    'patient__patient_name'
                 )
             )
 
@@ -1196,24 +934,10 @@ class Patientengagement(APIView):
                     item['call_outcome'].capitalize()
                 )
 
-                remarks = item['remarks']
-                if remarks:
-                    # Filter out junk remarks
-                    junk_patterns = [
-                        "call details only include timestamp",
-                        "no conversation or outcome recorded",
-                        "no conversation recorded",
-                        "no meaningful feedback",
-                        "call connected but no conversation"
-                    ]
-                    if any(pattern in remarks.lower() for pattern in junk_patterns):
-                        continue
-
+                if item['remarks']:
                     feedback_dict.setdefault(label, []).append({
-                        "patient_name": item['patient__patient_name'],
-                        "remark": remarks,
-                        "mobile_no": "+91"+item['patient__mobile_no'],
-                        "feedback_at": make_naive(item['effective_called_at'], tz_name='Asia/Kolkata')
+                        "patient_name": item['patient__patient_name'],  # ✅ FIXED
+                        "remark": item['remarks']
                     })
 
             feedback_data = [
@@ -1248,8 +972,8 @@ class CommunityEngagement(APIView):
             today = timezone.now().date()
             start_of_this_week = today - timedelta(days=today.weekday())
 
-            # 12 full weeks including this one (from oldest to newest)
-            week_starts = [start_of_this_week - timedelta(weeks=i) for i in reversed(range(12))]
+            # 4 full weeks including this one (from oldest to newest)
+            week_starts = [start_of_this_week - timedelta(weeks=i) for i in reversed(range(4))]
 
             # Step 1: Get actual data from DB
             weekly_qs = (
@@ -1364,8 +1088,6 @@ class CommunityEngagement(APIView):
 
         except Exception as e:
             return Response({"error": 1, "msg": str(e)})
-
-
 class RevisitAnalyticsAPIView(APIView):
     authentication_classes = [JWTAuthentication]
     # permission_classes = [IsAuthenticated]
@@ -1373,16 +1095,10 @@ class RevisitAnalyticsAPIView(APIView):
     def get(self, request):
         try:
             hospital_id = Hospital_user_model.objects.get(id=request.user_id).hospital.id
-            start_date_str = request.query_params.get('start_date')
-            end_date_str = request.query_params.get('end_date')
-
-            visits_query = Patient_date_model.objects.filter(hospital_id=hospital_id)
-
-            if start_date_str and end_date_str:
-                visits_query = visits_query.filter(date__date__range=[start_date_str, end_date_str])
 
             visits = (
-                visits_query
+                Patient_date_model.objects
+                .filter(hospital_id=hospital_id)
                 .annotate(visit_day=TruncDate('date'))
                 .values('mobile_no', 'department', 'date')
                 .distinct()
@@ -1398,12 +1114,6 @@ class RevisitAnalyticsAPIView(APIView):
                 'Orthopedics': '#F59E0B',
                 'Pediatrics': '#10B981',
                 'General Medicine': '#3B82F6',
-                'Dental': '#8B5CF6',
-                'Dermatology': '#EC4899',
-                'Neurology': '#6366F1',
-                'ENT': '#14B8A6',
-                'Opthalmology': '#F97316',
-                'Oncology': '#06B6D4',
             }
 
             department_counter = Counter()
@@ -1417,25 +1127,20 @@ class RevisitAnalyticsAPIView(APIView):
             current_month = current_date.month
 
             for (mobile_no, department), visit_days in visit_map.items():
-                sorted_days = sorted(visit_days)
-                
-                # Count ALL visits in the monthly trend for a better overall activity view
-                for date in sorted_days:
-                    local_date = localtime(date)
-                    month_key = (local_date.year, local_date.month)
-                    monthly_counter[month_key] += 1
-
                 if len(visit_days) > 1:
-                    # Each visit after the first one is a "revisit" for the KPIs
-                    revisit_count = len(sorted_days) - 1
-                    department_counter[department] += revisit_count
+                    sorted_days = sorted(visit_days)
+                    department_counter[department] += 1
 
+                    # Monthly revisits (skip first)
                     for date in sorted_days[1:]:
                         local_date = localtime(date)
+                        month_key = (local_date.year, local_date.month)
+                        monthly_counter[month_key] += 1
+
                         if local_date.year == current_year and local_date.month == current_month:
                             repeat_visits_this_month += 1
 
-                    # Gap calculation: Time between consecutive visits
+                    # Gap calculation
                     for i in range(1, len(sorted_days)):
                         gap = (sorted_days[i] - sorted_days[i - 1]).days
                         all_gaps.append(gap)
@@ -1463,30 +1168,11 @@ class RevisitAnalyticsAPIView(APIView):
                 })
 
             monthly_data = []
-            # Use provided date range or default to 6 months
-            if start_date_str and end_date_str:
-                s_dt = datetime.strptime(start_date_str, "%Y-%m-%d")
-                e_dt = datetime.strptime(end_date_str, "%Y-%m-%d")
-            else:
-                e_dt = datetime.now()
-                s_dt = e_dt - timedelta(days=180)
-
-            # Generate all month keys in range
-            curr = s_dt.replace(day=1)
-            all_month_keys = []
-            while curr <= e_dt:
-                all_month_keys.append((curr.year, curr.month))
-                # move to next month
-                if curr.month == 12:
-                    curr = curr.replace(year=curr.year + 1, month=1)
-                else:
-                    curr = curr.replace(month=curr.month + 1)
-
-            for year, month in all_month_keys:
+            for year, month in sorted(monthly_counter.keys()):
                 label = f"{month_abbr[month]} {str(year)[2:]}"
                 monthly_data.append({
                     'month': label,
-                    'revisits': monthly_counter.get((year, month), 0)
+                    'revisits': monthly_counter[(year, month)]
                 })
 
             gap_order = ['0-7 days', '8-30 days', '1-3 months', '3-6 months', '6+ months']
@@ -1515,27 +1201,18 @@ class EscalationEngagement(APIView):
     def get(self, request):
         try:
             user_id= Hospital_user_model.objects.get(id=request.user_id).hospital.id
-            start_date_str = request.query_params.get('start_date')
-            end_date_str = request.query_params.get('end_date')
-
-            if start_date_str and end_date_str:
-                end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
-                start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
-            else:
-                end_date = timezone.now().date()
-                start_date = end_date - timedelta(days=90)
-
+            now = timezone.now()
+            
             # === 1. Department-wise Escalation Counts ===
             dept_qs = (
             EscalationModel.objects
-            .filter(patient__hospital=user_id, escalated_at__date__gte=start_date, escalated_at__date__lte=end_date)
+            .filter(patient__hospital=user_id)
             .exclude(department__isnull=True)
             .exclude(department__exact='')
             .values(
                 'department',
                 'issue_description',
-                'patient__patient_name',
-                'patient__mobile_no'
+                'patient__patient_name'
             )
         )
             from collections import defaultdict
@@ -1546,8 +1223,7 @@ class EscalationEngagement(APIView):
                 if item['issue_description']:  # skip empty issues
                     dept_dict[item['department']].append({
                         "patient_name": item['patient__patient_name'],
-                        "issue": item['issue_description'],
-                        "mobile_no": "+91"+item['patient__mobile_no']
+                        "issue": item['issue_description']
                     })
 
             department_escalation_data = [
@@ -1571,14 +1247,12 @@ class EscalationEngagement(APIView):
             }
 
             status_qs = (
-                EscalationModel.objects.filter(
-                    patient__hospital=user_id,
-                    escalated_at__date__gte=start_date,
-                    escalated_at__date__lte=end_date
-                )
+                EscalationModel.objects.filter(patient__hospital=user_id)
                 .values('status')
                 .annotate(value=Count('id'))
             )
+            for row in status_qs:
+                print(row['status'])
             dict_present={
                 "Pending":False,
                 "In-progress":False,
@@ -1605,13 +1279,9 @@ class EscalationEngagement(APIView):
 
             # === 3. Recent Escalations ===
             recent_qs = (
-                EscalationModel.objects.filter(
-                    patient__hospital=user_id,
-                    escalated_at__date__gte=start_date,
-                    escalated_at__date__lte=end_date
-                )
+                EscalationModel.objects.filter(patient__hospital=user_id)
                 .select_related('patient')
-                .order_by('-escalated_at')[:10]
+                .order_by('-escalated_at')[:5]
             )
 
             recent_escalations = []
@@ -1621,20 +1291,13 @@ class EscalationEngagement(APIView):
                     "patient": esc.patient.patient_name,
                     "issue": esc.issue_description,
                     "status": esc.status,
-                    "mobile_no": "+91"+esc.patient.mobile_no,
                     "time": naturaltime(esc.escalated_at)
                 })
-            total_escalations = EscalationModel.objects.filter(
-                patient__hospital=user_id,
-                escalated_at__date__gte=start_date,
-                escalated_at__date__lte=end_date
-            ).count()
+            total_escalations = EscalationModel.objects.filter(patient__hospital=user_id).count()
             avg_resolution_time = EscalationModel.objects.filter(
                 status='resolved',
                 resolved_at__isnull=False,
-                patient__hospital=user_id,
-                escalated_at__date__gte=start_date,
-                escalated_at__date__lte=end_date
+                patient__hospital=user_id
             ).annotate(
                 resolution_duration=ExpressionWrapper(
                     F('resolved_at') - F('escalated_at'),
@@ -1644,25 +1307,27 @@ class EscalationEngagement(APIView):
                 avg_time=Avg('resolution_duration')
             )['avg_time']
 
-            # Step 2: Convert to days
-            avg_resolution_days = np.round(avg_resolution_time.total_seconds() / (24 * 3600), 2) if avg_resolution_time else 0
+            # Step 2: Convert to minutes
+            avg_resolution_minutes = np.round(avg_resolution_time.total_seconds() / 60,2) if avg_resolution_time else 0
             
 
             resolved_today = EscalationModel.objects.filter(
                 status='resolved',
-                resolved_at__date=timezone.now().date(),
+                resolved_at__date=now,
                 patient__hospital=user_id
             ).count()
+            
+            meta_data={
+                "total_escalations":total_escalations,
+                "avg_resolution_time":avg_resolution_minutes,
+                "resolved_today":resolved_today
 
+            }
             return Response({
                 "departmentEscalationData": department_escalation_data,
                 "resolutionStatusData": resolution_status_data,
                 "recentEscalations": recent_escalations,
-                "metadata": {
-                    "total_escalations": total_escalations,
-                    "avg_resolution_time": avg_resolution_days,
-                    "resolved_today": resolved_today
-                }
+                "metadata":meta_data
             })
 
         except Exception as e:
@@ -1726,14 +1391,9 @@ class PdfView(APIView):
             role = request.role
             start_date=inputdict['start_date']
             end_date=inputdict['end_date']
-            report_type = inputdict.get('report_type', 'detailed')
 
             start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
             end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
-            
-            if report_type == 'metrics':
-                return self.generate_metrics_report(request, user_id, hospital_name, start_date, end_date)
-
             print("start_data---->",start_date)
             print("end_date--->",end_date)
             start_str = f"{get_ordinal(start_date.day)} {start_date.strftime('%B %Y')}"
@@ -1742,7 +1402,6 @@ class PdfView(APIView):
             dict_obj['{{reporting_period}}']=f"{start_str} to {end_str}"
             dict_obj['{{hospital_name}}']=hospital_name.title()
             print("user_id---->",user_id)
-            # total_contacts=CallFeedbackModel.objects.filter(patient__hospital=user_id).distinct().count()
             connected_data = CallFeedbackModel.objects.filter(
                     
                     called_at__date__gte=start_date,
@@ -1837,259 +1496,6 @@ class PdfView(APIView):
             return resp
         except Exception as e:
             return Response({"error":1,"errorMsg":str(e)})
-
-    def generate_metrics_report(self, request, user_id, hospital_name, start_date, end_date):
-        try:
-            from django.db.models import Count, Avg, Sum, FloatField, Q
-            from django.db.models.functions import Cast, TruncDate
-            
-            # 1. KEY OUTCOMES
-            base_qs = CallFeedbackModel.objects.filter(
-                patient__hospital=user_id,
-                called_at__date__gte=start_date,
-                called_at__date__lte=end_date
-            )
-            
-            total_outbound = base_qs.count()
-            # Placeholder for inbound/chatbot as they might be in separate models
-            total_inbound = Inbound_Hospital.objects.filter(
-                started_at__date__gte=start_date,
-                started_at__date__lte=end_date
-            ).count() 
-            chatbot_interactions = 0 
-            total_interactions = total_inbound + total_outbound + chatbot_interactions
-            
-            # Calculate total duration for staff hours saved
-            total_duration_min = base_qs.aggregate(
-                total=Sum(Cast('call_duration', FloatField()))
-            )['total'] or 0
-            
-            avg_call_res_sec = (total_duration_min / total_outbound * 60) if total_outbound else 0
-            avg_call_res_sec = round(avg_call_res_sec, 1)
-            
-            # Appointments booked (assuming positive outcome)
-            appointments_booked = base_qs.filter(call_outcome='positive').count()
-            appointment_inquiry_calls = base_qs.count() 
-            conv_rate = (appointments_booked / appointment_inquiry_calls * 100) if appointment_inquiry_calls else 0
-            
-            # 2. MEASURABLE GAINS
-            avg_response_time = 22 # sec (placeholder)
-            sla_compliance = 94 # % (placeholder)
-            
-            # 3. FINANCIAL & REVENUE INTELLIGENCE
-            avg_revenue_per_appointment = 850 
-            total_revenue_influenced = appointments_booked * avg_revenue_per_appointment
-            
-            # 4. OPERATIONAL COST EFFICIENCY
-            staff_hours_saved = round(total_duration_min / 60, 1)
-            equivalent_fte = round(staff_hours_saved / 100, 2)
-            cost_per_staff = 40000
-            cost_efficiency = round(equivalent_fte * cost_per_staff, 0)
-
-            # 5. REVENUE EFFICIENCY METRICS
-            rev_per_call = round(total_revenue_influenced / total_outbound, 0) if total_outbound else 0
-            
-            # 6. DEPARTMENT-WISE BREAKDOWN
-            dept_data = base_qs.values('patient__department').annotate(
-                interactions=Count('id'),
-                bookings=Count('id', filter=Q(call_outcome='positive'))
-            )
-            
-            # Create DOCX
-            doc = Document()
-            doc.add_heading(f'Key Performance Indicators - {hospital_name}', 0)
-            doc.add_paragraph(f'Period: {start_date} to {end_date}')
-            
-            # 1. KEY OUTCOMES
-            doc.add_heading('1. KEY OUTCOMES', level=1)
-            table = doc.add_table(rows=1, cols=3)
-            table.style = 'Table Grid'
-            hdr_cells = table.rows[0].cells
-            hdr_cells[0].text = 'KPI'
-            hdr_cells[1].text = 'Value'
-            hdr_cells[2].text = 'Calculation Logic'
-            
-            kpi_list = [
-                ('Total Patient Interactions Handled', f'{total_interactions}', 'Total inbound calls + outbound calls + chatbot interactions'),
-                ('Avg Call Resolution Time (seconds)', f'{avg_call_res_sec} sec', '(Total duration of all completed calls) / (Total calls handled)'),
-                ('Appointment Conversion Rate (%)', f'{round(conv_rate, 1)}%', '(Appointments booked / Total appointment inquiry calls) * 100'),
-                ('No-Show Rate (%)', '11%', '(Patients who did not attend / Total booked appointments) * 100'),
-                ('Patient Satisfaction (CSAT)', '4.7 / 5', '(Sum of ratings / Total responses)'),
-                ('Automated Follow-ups Completed', f'{total_outbound}', 'Count of successfully completed automated follow-up calls'),
-            ]
-            
-            for kpi, val, logic in kpi_list:
-                row_cells = table.add_row().cells
-                row_cells[0].text = kpi
-                row_cells[1].text = val
-                row_cells[2].text = logic
-
-            # 2. MEASURABLE GAINS
-            doc.add_heading('2. MEASURABLE GAINS', level=1)
-            table_gains = doc.add_table(rows=1, cols=3)
-            table_gains.style = 'Table Grid'
-            hdr_cells = table_gains.rows[0].cells
-            hdr_cells[0].text = 'KPI'
-            hdr_cells[1].text = 'Value'
-            hdr_cells[2].text = 'Calculation Logic'
-            
-            gains_kpis = [
-                ('Avg Response Time (seconds)', f'{avg_response_time} sec', '(Total wait time of all answered calls) / (Total calls answered)'),
-                ('First Response SLA Compliance (%)', f'{sla_compliance}%', '(Calls answered within 30 sec / Total calls) * 100'),
-            ]
-            for kpi, val, logic in gains_kpis:
-                row_cells = table_gains.add_row().cells
-                row_cells[0].text = kpi
-                row_cells[1].text = val
-                row_cells[2].text = logic
-
-            # 3. FINANCIAL & REVENUE INTELLIGENCE
-            doc.add_heading('3. FINANCIAL & REVENUE INTELLIGENCE', level=1)
-            table_fin = doc.add_table(rows=1, cols=3)
-            table_fin.style = 'Table Grid'
-            hdr_cells = table_fin.rows[0].cells
-            hdr_cells[0].text = 'KPI'
-            hdr_cells[1].text = 'Value'
-            hdr_cells[2].text = 'Calculation Logic'
-            
-            fin_kpis = [
-                ('Appointments Booked via AI', f'{appointments_booked}', 'Count of bookings created through AI system'),
-                ('Avg Revenue per Appointment', f'₹{avg_revenue_per_appointment}', 'Standard hospital average'),
-                ('Total Revenue Influenced', f'₹{total_revenue_influenced}', 'Appointments booked via AI * Avg revenue per appointment'),
-            ]
-            for kpi, val, logic in fin_kpis:
-                row_cells = table_fin.add_row().cells
-                row_cells[0].text = kpi
-                row_cells[1].text = val
-                row_cells[2].text = logic
-
-            # 4. OPERATIONAL COST EFFICIENCY
-            doc.add_heading('4. OPERATIONAL COST EFFICIENCY', level=1)
-            table_ops = doc.add_table(rows=1, cols=3)
-            table_ops.style = 'Table Grid'
-            hdr_cells = table_ops.rows[0].cells
-            hdr_cells[0].text = 'KPI'
-            hdr_cells[1].text = 'Value'
-            hdr_cells[2].text = 'Calculation Logic'
-            
-            ops_kpis = [
-                ('Staff Hours Saved (hrs/month)', f'{staff_hours_saved} hrs', '(Total AI handled call duration in minutes / 60)'),
-                ('Equivalent FTE Freed', f'{equivalent_fte} FTE', '(Staff hours saved / 100 hrs per staff per month)'),
-                ('Cost Efficiency Value', f'₹{cost_efficiency}', '(FTE freed * Cost per staff per month)'),
-            ]
-            for kpi, val, logic in ops_kpis:
-                row_cells = table_ops.add_row().cells
-                row_cells[0].text = kpi
-                row_cells[1].text = val
-                row_cells[2].text = logic
-
-            # 5. REVENUE EFFICIENCY METRICS
-            doc.add_heading('5. REVENUE EFFICIENCY METRICS', level=1)
-            table_rev_eff = doc.add_table(rows=1, cols=3)
-            table_rev_eff.style = 'Table Grid'
-            hdr_cells = table_rev_eff.rows[0].cells
-            hdr_cells[0].text = 'KPI'
-            hdr_cells[1].text = 'Value'
-            hdr_cells[2].text = 'Calculation Logic'
-            
-            rev_eff_kpis = [
-                ('Revenue per Call Handled', f'₹{rev_per_call}', '(Total revenue influenced / Total calls handled)'),
-            ]
-            for kpi, val, logic in rev_eff_kpis:
-                row_cells = table_rev_eff.add_row().cells
-                row_cells[0].text = kpi
-                row_cells[1].text = val
-                row_cells[2].text = logic
-
-            # 6. DEPARTMENT-WISE PERFORMANCE BREAKDOWN section
-            doc.add_heading('6. DEPARTMENT-WISE PERFORMANCE BREAKDOWN', level=1)
-            table_dept = doc.add_table(rows=1, cols=4)
-            table_dept.style = 'Table Grid'
-            hdr_cells = table_dept.rows[0].cells
-            hdr_cells[0].text = 'Department'
-            hdr_cells[1].text = 'Interactions'
-            hdr_cells[2].text = 'Bookings'
-            hdr_cells[3].text = 'Conv. %'
-            
-            for dept in dept_data:
-                row_cells = table_dept.add_row().cells
-                row_cells[0].text = dept['patient__department'] or 'N/A'
-                row_cells[1].text = str(dept['interactions'])
-                row_cells[2].text = str(dept['bookings'])
-                d_conv = (dept['bookings'] / dept['interactions'] * 100) if dept['interactions'] else 0
-                row_cells[3].text = f'{round(d_conv, 1)}%'
-
-            # 7. SYSTEM PERFORMANCE HEALTH
-            doc.add_heading('7. SYSTEM PERFORMANCE HEALTH', level=1)
-            table_sys = doc.add_table(rows=1, cols=3)
-            table_sys.style = 'Table Grid'
-            hdr_cells = table_sys.rows[0].cells
-            hdr_cells[0].text = 'KPI'
-            hdr_cells[1].text = 'Value'
-            hdr_cells[2].text = 'Calculation Logic'
-            
-            sys_kpis = [
-                ('AI Call Handling Accuracy (%)', '96%', '(Correctly handled calls / Total AI handled calls) * 100'),
-                ('Escalation Rate to Human (%)', '4%', '(Calls transferred to human / Total calls handled) * 100'),
-                ('Emergency Detection Success (%)', '100%', '(Emergency cases correctly detected / Total emergency cases) * 100'),
-                ('System Uptime (%)', '99.9%', '(Total uptime minutes / Total minutes in period) * 100'),
-            ]
-            for kpi, val, logic in sys_kpis:
-                row_cells = table_sys.add_row().cells
-                row_cells[0].text = kpi
-                row_cells[1].text = val
-                row_cells[2].text = logic
-
-            # 8. TOP PATIENT INTENTS
-            doc.add_heading('8. TOP PATIENT INTENTS', level=1)
-            table_intent = doc.add_table(rows=1, cols=2)
-            table_intent.style = 'Table Grid'
-            hdr_cells = table_intent.rows[0].cells
-            hdr_cells[0].text = 'KPI'
-            hdr_cells[1].text = 'Calculation Logic'
-            
-            intent_kpis = [
-                ('Appointment Booking %', '(Booking related calls / Total calls) * 100'),
-                ('Lab Report Queries %', '(Lab report calls / Total calls) * 100'),
-                ('Follow-up / Revisit %', '(Follow-up calls / Total calls) * 100'),
-                ('Prescription Queries %', '(Prescription calls / Total calls) * 100'),
-            ]
-            for kpi, logic in intent_kpis:
-                row_cells = table_intent.add_row().cells
-                row_cells[0].text = kpi
-                row_cells[1].text = logic
-
-            # 9. KEY HIGHLIGHTS OF THE MONTH
-            doc.add_heading('9. KEY HIGHLIGHTS OF THE MONTH', level=1)
-            table_high = doc.add_table(rows=1, cols=2)
-            table_high.style = 'Table Grid'
-            hdr_cells = table_high.rows[0].cells
-            hdr_cells[0].text = 'Highlight'
-            hdr_cells[1].text = 'Selection Logic'
-            
-            highlights = [
-                ('Highest Performing Department', 'Department with highest revenue generated'),
-                ('Best CSAT Department', 'Department with highest CSAT score'),
-                ('Peak Call Volume Day', 'Date with maximum calls handled'),
-                ('Most Used Language', 'Language with highest % usage'),
-            ]
-            for h, l in highlights:
-                row_cells = table_high.add_row().cells
-                row_cells[0].text = h
-                row_cells[1].text = l
-
-            sheet_path = os.path.dirname(os.path.abspath(__file__)).replace("\\", "/")
-            folder_path = os.path.join(sheet_path, "files")
-            os.makedirs(folder_path, exist_ok=True)
-            filename = f"metrics_report_{user_id}_{uuid.uuid4()}.docx"
-            file_path = os.path.join(folder_path, filename)
-            doc.save(file_path)
-            
-            resp = FileResponse(open(file_path, 'rb'), as_attachment=True, filename=filename)
-            resp['Content-Disposition'] = f'attachment; filename="{filename}"'
-            return resp
-        except Exception as e:
-            return Response({"error": 1, "errorMsg": str(e)})
 class TextView(APIView):
     authentication_classes = [JWTAuthentication]
     def post(self,request):
@@ -2134,7 +1540,7 @@ class tab_access(APIView):
             "community_engagement": user.community_egagement,  # typo retained for now
             "revisit_engagement": user.revisit_engagement,
             "escalation_engagement": user.escalation_engagement,
-            "calllog_engagement": True, # Force true as per requirements
+            "calllog_engagement": user.calllog_engagement,
             "upload_engagement": user.upload_engagement,
             "pdf_engagement":user.pdf_engagement
             })          
@@ -2151,44 +1557,41 @@ class ROIMetrics(APIView):
             end_date = request.query_params.get('end_date')
             call_direction = request.query_params.get('call_direction', 'outbound')
             
-            # Select Model
+            # Select Baseline from attempts
             if call_direction == 'inbound':
-                FeedbackModel = CallFeedbackModel_inbound
-                # For inbound, we filter differently as there is no patient__hospital (it's global for now or linked differently)
-                # Actually, Inbound_Hospital doesn't have a hospital FK in the current model? 
-                # Let's check Inbound_Hospital model in app/models.py
-                booked_qs = CallFeedbackModel_inbound.objects.filter(call_outcome='positive')
+                attempts = Inbound_Hospital.objects.filter(hospital_id=user_id)
+                feedback_qs = CallFeedbackModel_inbound.objects.filter(patient__hospital_id=user_id)
             else:
-                FeedbackModel = CallFeedbackModel
-                booked_qs = CallFeedbackModel.objects.filter(patient__hospital=user_id, call_outcome='positive')
+                attempts = Outbound_Hospital.objects.filter(patient_id__hospital=user_id)
+                feedback_qs = CallFeedbackModel.objects.filter(patient__hospital=user_id)
 
             if start_date and end_date:
-                # Use effective_called_at if available, otherwise called_at
-                from django.db.models.functions import Coalesce
-                booked_qs = booked_qs.annotate(
-                    eff_date=Coalesce('called_at', 'created_at')
-                ).filter(eff_date__date__range=[start_date, end_date])
+                attempts = attempts.filter(started_at__date__range=[start_date, end_date])
+                feedback_qs = feedback_qs.filter(called_at__date__range=[start_date, end_date])
             
-            booked_count = booked_qs.count()
+            interaction_count = attempts.count()
+            booked_count = feedback_qs.filter(call_outcome='positive').count()
             
-            # 2. Financial Gains
+            # Table 3A: Revenue Generated
             avg_rev_per_appt = 650 
             total_revenue_influenced = booked_count * avg_rev_per_appt
             
-            # 3. Operational Efficiency
-            from django.db.models import FloatField
-            from django.db.models.functions import Cast
-            total_duration = booked_qs.aggregate(total=Avg(Cast('call_duration', FloatField())))['total'] or 0
-            staff_hours_saved = np.round((total_duration * booked_count) / 60, 1)
+            # Table 3B: Revenue Leakage Prevented
+            missed_calls = attempts.filter(calling_process='not_connected').count()
+            missed_call_recovery = missed_calls * 0.42 * avg_rev_per_appt # 42% is target conversion
+            
+            # Table 3C: Operational Cost Efficiency
+            total_duration_min = feedback_qs.aggregate(total=Sum(Cast('call_duration', FloatField())))['total'] or 0
+            staff_hours_saved = np.round(total_duration_min / 60, 1)
             fte_freed = np.round(staff_hours_saved / 100, 2)
-            cost_per_staff = 40000
-            cost_efficiency = np.round(fte_freed * cost_per_staff, 0)
+            cost_efficiency = np.round(fte_freed * 40000, 0)
             
             return Response({
                 "roi_financial": [
+                    {"name": "Interactions", "value": interaction_count, "unit": ""},
                     {"name": "Appointments Booked", "value": booked_count, "unit": ""},
                     {"name": "Revenue Influenced", "value": total_revenue_influenced, "unit": "₹"},
-                    {"name": "No-Show Recovery", "value": np.round(total_revenue_influenced * 0.15, 0), "unit": "₹"}
+                    {"name": "Leakage Prevented", "value": np.round(missed_call_recovery, 0), "unit": "₹"}
                 ],
                 "roi_efficiency": [
                     {"name": "Staff Hours Saved", "value": staff_hours_saved, "unit": "hrs"},
@@ -2207,34 +1610,37 @@ class DepartmentAnalytics(APIView):
             user_id = Hospital_user_model.objects.get(id=request.user_id).hospital.id
             call_direction = request.query_params.get('call_direction', 'outbound')
             
-            # Select Model and Filter
             if call_direction == 'inbound':
-                # For inbound, we aggregate by department field on Inbound_Hospital
-                # Linked through CallFeedbackModel_inbound
-                base_qs = CallFeedbackModel_inbound.objects.all()
-                dept_field = 'patient__department'
+                dept_qs = Inbound_Hospital.objects.filter(hospital_id=user_id).values('department').annotate(interactions=Count('id'))
+                feedback_qs = CallFeedbackModel_inbound.objects.filter(patient__hospital_id=user_id)
+                dept_field = 'department'
             else:
-                base_qs = CallFeedbackModel.objects.filter(patient__hospital=user_id)
+                dept_qs = Patient_model.objects.filter(hospital_id=user_id).values('department').annotate(interactions=Count('id'))
+                feedback_qs = CallFeedbackModel.objects.filter(patient__hospital=user_id)
                 dept_field = 'patient__department'
 
-            # Aggregate stats by department
-            dept_stats = base_qs.values(dept_field).annotate(
-                interactions=Count('id'),
+            feedback_stats = feedback_qs.values(dept_field).annotate(
                 bookings=Count('id', filter=Q(call_outcome='positive')),
-                avg_duration=Avg(Cast('call_duration', FloatField()))
-            ).order_by('-interactions')
+            )
+            
+            feedback_map = {item[dept_field]: item for item in feedback_stats}
             
             formatted_data = []
-            for item in dept_stats:
-                dept = item[dept_field] or "General"
-                conv_rate = (item['bookings'] / item['interactions'] * 100) if item['interactions'] > 0 else 0
+            for item in dept_qs:
+                dept = item.get('department') or item.get('patient__department') or "General"
+                stats = feedback_map.get(dept, {'bookings': 0})
+                
+                interactions = item.get('interactions') or item.get('count') or 0
+                bookings = stats['bookings']
+                conv_rate = (bookings / interactions * 100) if interactions > 0 else 0
+                
                 formatted_data.append({
                     "department": dept,
-                    "interactions": item['interactions'],
-                    "bookings": item['bookings'],
+                    "interactions": interactions,
+                    "bookings": bookings,
                     "conversion": f"{conv_rate:.1f}%",
-                    "revenue": item['bookings'] * 650,
-                    "csat": 4.5
+                    "revenue": bookings * 650,
+                    "csat": 4.7
                 })
                 
             return Response({
@@ -2258,24 +1664,19 @@ class CampaignView(APIView):
         try:
             hospital_id = Hospital_user_model.objects.get(id=request.user_id).hospital.id
             campaigns = Campaign.objects.filter(hospital_id=hospital_id).order_by('-created_at')
-            
+
             data = []
             for c in campaigns:
-                # Aggregate stats for each campaign
                 total_calls = c.calls.count()
                 connected = c.calls.filter(calling_process='connected').count()
-                
+
                 data.append({
                     "id": str(c.id),
                     "name": c.name,
+                    "template_type": c.template_type,
                     "purpose": c.purpose,
                     "status": c.status,
                     "created_at": c.created_at,
-                    "filters": {
-                        "start_date": c.start_date,
-                        "end_date": c.end_date,
-                        "unconnected_only": c.unconnected_only
-                    },
                     "stats": {
                         "total_calls": total_calls,
                         "connected_calls": connected
@@ -2285,11 +1686,158 @@ class CampaignView(APIView):
         except Exception as e:
             return Response({"msg": str(e), "error": 1})
 
+    def post(self, request):
+        try:
+            hospital_id = Hospital_user_model.objects.get(id=request.user_id).hospital.id
+            payload = request.data
+            template_type = payload.get('template_type', 'custom')
+            purpose = payload.get('purpose', '')
+
+            if template_type == 'health_package':
+                purpose = f"Introduce new health package: {payload.get('package_name')}. Includes: {payload.get('discount_details', 'Standard tests')}"
+            elif template_type == 'new_facility':
+                purpose = f"Announce new facility: {payload.get('facility_name')}. Available now."
+            elif template_type == 'discounted_product':
+                purpose = f"Offer discount on: {payload.get('package_name')}. Discount: {payload.get('discount_details')}"
+
+            campaign = Campaign.objects.create(
+                hospital_id=hospital_id,
+                name=payload.get('name'),
+                template_type=template_type,
+                package_name=payload.get('package_name'),
+                facility_name=payload.get('facility_name'),
+                discount_details=payload.get('discount_details'),
+                purpose=purpose,
+                unconnected_only=payload.get('unconnected_only', False)
+            )
+            return Response({"msg": "Campaign created", "id": str(campaign.id), "error": 0})
+        except Exception as e:
+            return Response({"msg": str(e), "error": 1})
+
     def delete(self, request):
         try:
             campaign_id = request.query_params.get('id')
             Campaign.objects.filter(id=campaign_id).delete()
             return Response({"msg": "Campaign deleted", "error": 0})
+        except Exception as e:
+            return Response({"msg": str(e), "error": 1})
+
+class doctor_login_view(APIView):
+    def post(self, request):
+        try:
+            email = request.data.get('email')
+            password = request.data.get('password')
+            try:
+                doctor = Doctor_model.objects.get(email=email)
+            except Doctor_model.DoesNotExist:
+                return Response({"msg": "Doctor not found", "error": 1})
+            
+            if check_password(password, doctor.password_hash):
+                token = create_token({
+                    "user_id": str(doctor.id),
+                    "email": doctor.email,
+                    "role": "Doctor",
+                    "hospital_id": str(doctor.hospital.id)
+                })
+                return Response({
+                    "msg": "Doctor login successful",
+                    "token": token,
+                    "doctor_name": doctor.name,
+                    "hospital_name": doctor.hospital.name,
+                    "error": 0
+                })
+            else:
+                return Response({"msg": "Invalid password", "error": 1})
+        except Exception as e:
+            return Response({"msg": str(e), "error": 1})
+
+class MediVoiceSessionView(APIView):
+    authentication_classes = [JWTAuthentication]
+    def post(self, request):
+        try:
+            doctor_id = request.user_id
+            doctor = Doctor_model.objects.get(id=doctor_id)
+            data = request.data
+            
+            session = MediVoiceSession.objects.create(
+                doctor=doctor,
+                patient_name=data.get('patientName'),
+                patient_mobile=data.get('patientMobile'),
+                patient_email=data.get('patientEmail'),
+                overall_summary=data.get('overallSummary'),
+                meta_data=data.get('metaData')
+            )
+            
+            transcriptions = data.get('transcriptions', [])
+            for t in transcriptions:
+                MediVoiceTranscription.objects.create(
+                    session=session,
+                    speaker=t.get('speaker'),
+                    text=t.get('text'),
+                    timestamp=t.get('timestamp', 0.0)
+                )
+            
+            return Response({"msg": "Session saved", "session_id": str(session.id), "error": 0})
+        except Exception as e:
+            return Response({"msg": str(e), "error": 1})
+
+    def get(self, request):
+        try:
+            doctor_id = request.user_id
+            sessions = MediVoiceSession.objects.filter(doctor_id=doctor_id).order_by('-created_at')
+            data = []
+            for s in sessions:
+                data.append({
+                    "id": str(s.id),
+                    "patientName": s.patient_name,
+                    "patientMobile": s.patient_mobile,
+                    "createdAt": s.created_at,
+                    "transcriptionCount": s.transcriptions.count()
+                })
+            return Response({"data": data, "error": 0})
+        except Exception as e:
+            return Response({"msg": str(e), "error": 1})
+
+class DoctorTranscriptionView(APIView):
+    authentication_classes = [JWTAuthentication]
+    def get(self, request):
+        try:
+            user_id = Hospital_user_model.objects.get(id=request.user_id).hospital.id
+            doctor_id = request.query_params.get('doctor_id')
+            
+            query = MediVoiceSession.objects.filter(doctor__hospital_id=user_id)
+            if doctor_id:
+                query = query.filter(doctor_id=doctor_id)
+            
+            sessions = query.select_related('doctor').order_by('-created_at')
+            data = []
+            for s in sessions:
+                transcriptions = s.transcriptions.all().order_by('timestamp')
+                data.append({
+                    "id": str(s.id),
+                    "doctorName": s.doctor.name,
+                    "doctorDepartment": s.doctor.department,
+                    "patientName": s.patient_name,
+                    "patientMobile": s.patient_mobile,
+                    "overallSummary": s.overall_summary,
+                    "metaData": s.meta_data,
+                    "createdAt": s.created_at,
+                    "transcriptions": [
+                        {
+                            "speaker": t.speaker,
+                            "text": t.text,
+                            "timestamp": t.timestamp
+                        } for t in transcriptions
+                    ]
+                })
+            
+            doctors = Doctor_model.objects.filter(hospital_id=user_id).values('id', 'name', 'department')
+            
+            return Response({
+                "sessions": data,
+                "doctors": list(doctors),
+                "error": 0
+            })
         except Exception as e:
             return Response({"msg": str(e), "error": 1})
 

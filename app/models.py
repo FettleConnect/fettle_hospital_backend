@@ -244,9 +244,19 @@ class Outbound_assistant(models.Model):
         return f"{self.hospital} {self.assistant_id}"
 
 class Campaign(models.Model):
+    TEMPLATE_CHOICES = [
+        ('health_package', 'New Health Package'),
+        ('new_facility', 'New Facility'),
+        ('discounted_product', 'Discounted Product'),
+        ('custom', 'Custom AI Draft'),
+    ]
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     hospital = models.ForeignKey(Hospital_model, on_delete=models.CASCADE, related_name='campaigns')
     name = models.CharField(max_length=255)
+    template_type = models.CharField(max_length=50, choices=TEMPLATE_CHOICES, default='custom')
+    package_name = models.CharField(max_length=255, blank=True, null=True)
+    facility_name = models.CharField(max_length=255, blank=True, null=True)
+    discount_details = models.CharField(max_length=255, blank=True, null=True)
     purpose = models.TextField(blank=True, null=True)
     start_date = models.DateField(null=True, blank=True)
     end_date = models.DateField(null=True, blank=True)
@@ -326,6 +336,7 @@ class Inbound_Hospital(models.Model):
         ("in_progress","IN PROGRESS")
     ]
     id=models.UUIDField(primary_key=True,default=uuid.uuid4)
+    hospital = models.ForeignKey(Hospital_model, on_delete=models.CASCADE, related_name='inbound_calls', null=True, blank=True)
     vapi_id=models.CharField(max_length=1000,null=True,blank=True)
     status=models.CharField(max_length=1000,null=True,blank=True)
     # assistant_id=models.ForeignKey(Outbound_assistant,on_delete=models.SET_NULL,null=True,blank=True)

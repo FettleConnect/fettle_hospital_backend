@@ -40,11 +40,53 @@ cd /home/fettle_backend
 git fetch origin master
 git reset --hard origin/master
 python manage.py migrate
-sudo systemctl restart gunicorn
-sudo systemctl restart celery
+sudo systemctl restart fettle_backend
+sudo systemctl restart fettle_celery
 ```
 
-## 4. Frontend Deployment
+## 4. Systemd Service Templates
+
+### **Backend (SSL Server)**
+File: `/etc/systemd/system/fettle_backend.service`
+```ini
+[Unit]
+Description=Django Fettle Backend Persistent Service
+After=network.target
+
+[Service]
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/fettle_backend
+ExecStart=/home/fettle_backend/env/bin/python manage.py runsslserver 0.0.0.0:8000 --certificate /home/fettle_backend/fullchain.pem --key /home/fettle_backend/privkey.pem
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### **Celery (Background Tasks)**
+File: `/etc/systemd/system/fettle_celery.service`
+```ini
+[Unit]
+Description=Celery Worker for Fettle Backend
+After=network.target redis.service
+
+[Service]
+Type=forking
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/fettle_backend
+EnvironmentFile=/home/fettle_backend/.env
+ExecStart=/home/fettle_backend/env/bin/celery -A project worker -l info -P gevent --detach
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+## 5. Frontend Deployment
 Since the GitHub push for the frontend failed (`Repository not found`), you must manually deploy the `dist/` folder generated on this local machine to your web server. 
 
 **Key Frontend Features now live:**

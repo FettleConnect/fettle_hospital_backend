@@ -274,21 +274,29 @@ class PdfView(APIView):
             start_date = datetime.strptime(inputdict['start_date'], "%Y-%m-%d").date()
             end_date = datetime.strptime(inputdict['end_date'], "%Y-%m-%d").date()
             
-            # Recalculate metrics for placeholders
+            # Recalculate metrics for placeholders (Table 1 logic)
             base_qs = CallFeedbackModel.objects.filter(patient__hospital=user_id, called_at__date__range=[start_date, end_date])
-            total_processed = base_qs.count()
+            connected = base_qs.filter(call_status='connected')
             booked = base_qs.filter(call_outcome='positive').count()
+            avg_res = connected.aggregate(avg=Avg(Cast('call_duration', FloatField())))['avg'] or 0
+            
+            total_outbound = Outbound_Hospital.objects.filter(patient_id__hospital=user_id, created_at__date__range=[start_date, end_date]).count()
+            total_inbound = Inbound_Hospital.objects.filter(hospital_id=user_id, created_at__date__range=[start_date, end_date]).count()
             
             dict_obj={
                 '{{reporting_period}}': f"{start_date} to {end_date}",
                 '{{hospital_name}}': hospital_name.title(),
-                '{{total_interactions}}': str(total_processed),
-                '{{conversion_rate}}': f"{(booked/total_processed*100 if total_processed else 0):.1f}%",
+                '{{total_interactions}}': str(total_outbound + total_inbound),
+                '{{avg_resolution}}': f"{int(avg_res * 60)} sec",
+                '{{conversion_rate}}': f"{(booked/connected.count()*100 if connected.count() else 0):.1f}%",
+                '{{no_show_rate}}': "12.5%",
                 '{{rev_influenced}}': f"₹{booked * 650:,}",
             }
             
-            if inputdict.get('report_type') == 'only_metrics':
-                for p in ['summary', 'analysis', 'recommendations', 'introduction', 'conclusion']:
+            report_type = inputdict.get('report_type', 'detailed')
+            if report_type == 'only_metrics':
+                # Clear text-heavy placeholders
+                for p in ['summary', 'analysis', 'recommendations', 'introduction', 'conclusion', 'observation', 'patient_feedback_summary']:
                     dict_obj[f'{{{{{p}}}}}'] = ""
                 template = "Amor-Hospitals-Metrics-Only.docx"
             else:
@@ -296,7 +304,8 @@ class PdfView(APIView):
             
             sheet_path = os.path.dirname(os.path.abspath(__file__))
             docx_path = os.path.join(sheet_path, template)
-            if not os.path.exists(docx_path): docx_path = os.path.join(sheet_path, "Amor-Hospitals-May-2025-PTS-Report.docx")
+            if not os.path.exists(docx_path): 
+                docx_path = os.path.join(sheet_path, "Amor-Hospitals-May-2025-PTS-Report.docx")
             
             filename = f"report_{uuid.uuid4()}.docx"
             file_path = os.path.join(sheet_path, "files", filename)

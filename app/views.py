@@ -12,10 +12,9 @@ from django.utils.timezone import make_aware
 from django.utils import timezone
 import numpy as np
 from datetime import timedelta
-from django.db.models.functions import TruncDate
-from django.db.models import Count,Avg,Min,F, ExpressionWrapper, DurationField, Q
+from django.db.models.functions import TruncDate, TruncMonth, TruncWeek, Coalesce, Cast
+from django.db.models import Count,Avg,Min,F, ExpressionWrapper, DurationField, Q, FloatField, Sum
 import calendar
-from django.db.models.functions import TruncWeek
 from collections import OrderedDict
 from humanize import naturaltime
 from collections import defaultdict, Counter

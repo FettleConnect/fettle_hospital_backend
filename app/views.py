@@ -874,20 +874,20 @@ class Patientengagement(APIView):
                 today = timezone.now().date()
                 start_of_period = today - timedelta(days=90)
 
-            # Use created_at for all attempts (Contacts per Period)
-            contacts_qs = Outbound_Hospital.objects.filter(patient_id__hospital=user_id, created_at__date__gte=start_of_period, created_at__date__lte=today)
+            # Use started_at for all attempts (Contacts per Period)
+            contacts_qs = Outbound_Hospital.objects.filter(patient_id__hospital=user_id, started_at__date__gte=start_of_period, started_at__date__lte=today)
             
             delta = (today - start_of_period).days
             contacts_data = []
             if delta > 60:
                 # Aggregate by Month
-                period_qs = contacts_qs.annotate(period=TruncMonth('created_at')).values('period').annotate(contacts=Count('id')).order_by('period')
+                period_qs = contacts_qs.annotate(period=TruncMonth('started_at')).values('period').annotate(contacts=Count('id')).order_by('period')
                 for item in period_qs:
                     if item['period']:
                         contacts_data.append({"date": item['period'].strftime("%b %Y"), "contacts": item['contacts']})
             else:
                 # Aggregate by Day
-                period_qs = contacts_qs.annotate(period=TruncDate('created_at')).values('period').annotate(contacts=Count('id')).order_by('period')
+                period_qs = contacts_qs.annotate(period=TruncDate('started_at')).values('period').annotate(contacts=Count('id')).order_by('period')
                 day_map = { (start_of_period + timedelta(days=i)).strftime("%Y-%m-%d"): 0 for i in range(delta + 1) }
                 for item in period_qs:
                     if item['period']:

@@ -852,122 +852,99 @@ class KPISummary(APIView):
             return Response({"msg": str(e), "error": 1})
 
 
-class Patientengagement(APIView):
+class fetchpatients(APIView):
     authentication_classes = [JWTAuthentication]
 
     def get(self, request):
         try:
-            user_id= Hospital_user_model.objects.get(id=request.user_id).hospital.id
-            today = timezone.now().date()
-            start_of_week = today - timedelta(days=7)  # Monday
-            print("start_of_week--->",start_of_week)
-            # === 1. Contacts per Day (Mon to Sun) ===
-            contacts_qs = (
-                CallFeedbackModel.objects
-                .filter(called_at__date__gt=start_of_week,patient__hospital=user_id)
-                .annotate(day=TruncDate('called_at'))
-                .values('day')
-                .annotate(contacts=Count('id'))
-            )
+            admin_id = request.user_id
+            role = request.role
+            hospital_ids=[]
+            if role == 'user':
+                hospital_user=Hospital_user_model.objects.get(id=admin_id)
+                hospital_ids.append(hospital_user.hospital.id)
+            else:
+                hospital_ids = list(Hospital_model.objects.values_list('id', flat=True))
+                
+            limit_param = request.query_params.get('limit', '').strip().lower()
+            raw_params=request.query_params.get('call_status','').strip().lower()
+            filter_params = set([s.strip().lower() for s in raw_params.split(',') if s.strip()])
             
+            queryset = Patient_model.objects.select_related('hospital').filter(
+                hospital_id__in=hospital_ids
+            ).order_by('mobile_no', 'uploaded_at')
 
-            # Initialize all 7 days with 0 contacts
-            # day_map = {calendar.day_name[i][:3]: 0 for i in range(7)}  # {'Mon': 0, ..., 'Sun': 0}
-            day_map={}
-            for i in range(1,8):
-                date_w=(start_of_week+timedelta(days=i)).weekday()
-                day_map[calendar.day_name[date_w][:3]]=0
-            # print("ok")
-            # print(day_map.keys())
-            for item in contacts_qs:
-                day = calendar.day_name[item['day'].weekday()][:3]
-                day_map[day] += item['contacts']
+            if limit_param in ['', 'all']:
+                patients_list = list(queryset)
+            else:
+                try:
+                    limit = int(limit_param)
+                    patients_list = list(queryset[:limit])
+                except:
+                    patients_list = list(queryset)
 
-            contacts_data = [{"date": day, "contacts": count} for day, count in day_map.items()]
+            out_calls = Outbound_Hospital.objects.filter(patient_id__hospital_id__in=hospital_ids).values('patient_id', 'calling_process', 'status')
+            lookup = {str(o['patient_id']): (o['calling_process'] if o['calling_process'] != 'not_happened' else ('queued' if o['status'] == 'queued' else 'not_connected')) for o in out_calls}
+            
+            h_text_map = {t.hospital_id: t.text for t in TextModel.objects.filter(hospital_id__in=hospital_ids)}
+            status_colors = {"connected": "#28A745", "not_connected": "#DC3545", "queued": "#FFC107", "in_progress": "#3B82F6"}
+            
+            patient_data=[]
+            for p in patients_list:
+                cp = lookup.get(str(p.id), "not_connected")
+                if not filter_params or cp.lower() in filter_params:
+                    patient_data.append({
+                        "id": p.id, "patient_name": p.patient_name, "mobile_no": p.mobile_no, "department": p.department, "hospital_name": p.hospital.name,
+                        "whatsapp_link": f"https://web.whatsapp.com/send?phone={p.mobile_no}&text={h_text_map.get(p.hospital.id, '')}",
+                        "calling_progress": cp, "color": status_colors.get(cp, "#6C757D")
+                    })
+            return Response({"data": patient_data, "count": len(patient_data), "error": 0})
+        except Exception as e: return Response({"msg": str(e), "error": 1})
 
-            # === 2. Call Answer Data ===
-            print("user_id--->",user_id,"start_of_week--->",start_of_week)
-            # Apply filter
-            filtered_queryset = CallFeedbackModel.objects.filter(
-                Q(called_at__date__gt=start_of_week) & Q(patient__hospital=user_id)
-            )
+class Patientengagement(APIView):
+    authentication_classes = [JWTAuthentication]
+    def get(self, request):
+        try:
+            user_id = Hospital_user_model.objects.get(id=request.user_id).hospital.id
+            sd, ed = request.query_params.get('start_date'), request.query_params.get('end_date')
+            if sd and ed:
+                today, start = datetime.strptime(ed, "%Y-%m-%d").date(), datetime.strptime(sd, "%Y-%m-%d").date()
+            else:
+                today, start = timezone.now().date(), timezone.now().date() - timedelta(days=90)
 
-            # Total calls
-            total_calls = filtered_queryset.count()
-            print("total_calls --->", total_calls)
+            # Raw volume using started_at
+            contacts_qs = Outbound_Hospital.objects.filter(patient_id__hospital=user_id, started_at__date__range=[start, today])
+            delta = (today - start).days
+            data = []
+            if delta > 60:
+                qs = contacts_qs.annotate(p=TruncMonth('started_at')).values('p').annotate(c=Count('id')).order_by('p')
+                for item in qs:
+                    if item['p']: data.append({"date": item['p'].strftime("%b %Y"), "contacts": item['c']})
+            else:
+                qs = contacts_qs.annotate(p=TruncDate('started_at')).values('p').annotate(c=Count('id')).order_by('p')
+                day_map = { (start + timedelta(days=i)).strftime("%Y-%m-%d"): 0 for i in range(delta + 1) }
+                for item in qs:
+                    if item['p']: day_map[item['p'].strftime("%Y-%m-%d")] = item['c']
+                for ds, count in sorted(day_map.items()):
+                    data.append({"date": datetime.strptime(ds, "%Y-%m-%d").strftime("%b %d"), "contacts": count})
 
-            # Aggregate on same filtered data
+            # Feedback Data
+            fb_qs = CallFeedbackModel.objects.filter(patient__hospital=user_id, called_at__date__range=[start, today])
+            total = fb_qs.count()
+            ans = fb_qs.filter(call_status='connected').count()
+            
             from django.db.models import FloatField
             from django.db.models.functions import Cast
-            result = filtered_queryset.aggregate(
-                total_calls=Count('id'),
-                avg_call_duration=Avg(Cast('call_duration', FloatField()))
-            )
-
-            total_calls_all_period = result['total_calls'] or 0
-            average_call_duration = result['avg_call_duration'] or 0
-            meta_data={"total_calls_all_period":total_calls_all_period,"average_call_duration":np.round(float(average_call_duration),2)}
-            answered_calls = CallFeedbackModel.objects.filter(call_status='connected', called_at__date__gt=start_of_week,patient__hospital=user_id).count()
-            not_answered = total_calls - answered_calls
-
-            call_answer_data = [{"name": "Answered", "value": np.round((answered_calls / total_calls) * 100, 2) if total_calls else 0, "color": "#10B981"}, {"name": "Not Answered", "value": np.round((not_answered / total_calls) * 100, 2) if total_calls else 0, "color": "#EF4444"}]
-
-            # === 3. Feedback Data ===
-            feedback_qs = (
-                CallFeedbackModel.objects
-                .filter(
-                    called_at__date__gt=start_of_week,
-                    patient__hospital=user_id
-                )
-                .values(
-                    'call_outcome',
-                    'remarks',
-                    'patient__patient_name'
-                )
-            )
-
-            label_map = {
-                "positive": "Positive",
-                "negative": "Negative",
-                "no_feedback": "Neutral",
-                "escalated": "Escalated",
-            }
-
-            feedback_dict = {label: [] for label in label_map.values()}
-
-            for item in feedback_qs:
-                label = label_map.get(
-                    item['call_outcome'],
-                    item['call_outcome'].capitalize()
-                )
-
-                if item['remarks']:
-                    feedback_dict.setdefault(label, []).append({
-                        "patient_name": item['patient__patient_name'],  # ✅ FIXED
-                        "remark": item['remarks']
-                    })
-
-            feedback_data = [
-                {
-                    "feedback": label,
-                    "count": len(entries),
-                    "remarks": entries
-                }
-                for label, entries in feedback_dict.items()
-            ]
-
-            # === Final response ===
+            agg = fb_qs.aggregate(avg_dur=Avg(Cast('call_duration', FloatField())))
+            avg_dur = agg['avg_dur'] or 0
+            
             return Response({
-                "contactsData": contacts_data,
-                "callAnswerData": call_answer_data,
-                "feedbackData": feedback_data,
-                "metadata":meta_data,
-                "weekStart": start_of_week.strftime("%Y-%m-%d"),
-                "weekEnd": today.strftime("%Y-%m-%d")
+                "contactsData": data,
+                "callAnswerData": [{"name": "Answered", "value": np.round((ans/total*100 if total else 0), 2), "color": "#10B981"}, {"name": "Not Answered", "value": np.round(100 - (ans/total*100 if total else 0), 2), "color": "#EF4444"}],
+                "metadata": {"total_calls_all_period": total, "average_call_duration": np.round(float(avg_dur), 2)},
+                "error": 0
             })
-
-        except Exception as e:
-            return Response({"error": 1, "msg": str(e)})
+        except Exception as e: return Response({"error": 1, "msg": str(e)})
 
 
 class CommunityEngagement(APIView):

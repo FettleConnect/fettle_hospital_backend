@@ -512,25 +512,11 @@ class fetchpatients(APIView):
             admin_id = request.user_id
             role = request.role
             hospital_ids=[]
-            print("role--->",role)
             if role == 'user':
-                hospital_users=Hospital_user_model.objects.get(id=admin_id)
-                if hospital_users.calllog_engagement:
-                    hospital_ids.append(hospital_users.hospital.id)
-                else:
-                    return Response({"msg": "Invalid user", "error": 0})
+                hospital_user=Hospital_user_model.objects.get(id=admin_id)
+                hospital_ids.append(hospital_user.hospital.id)
             else:
-                restricted_hospital=list(
-                    Hospital_user_model.objects.filter(
-                        calllog_engagement=True
-                    ).values_list('hospital_id', flat=True).distinct()
-                )
-                all_hospital=list(
-                    Hospital_user_model.objects.filter(
-                        
-                    ).values_list('hospital_id', flat=True).distinct()
-                )
-                hospital_ids.extend(list(set(all_hospital) - set(restricted_hospital)))
+                hospital_ids = list(Hospital_model.objects.values_list('id', flat=True))
                 
                 
             limit_param = request.query_params.get('limit', '').strip().lower()
@@ -540,70 +526,57 @@ class fetchpatients(APIView):
                 hospital_id__in=hospital_ids
             ).order_by('mobile_no', 'uploaded_at')
 
-            outbound_assistant_ids=Outbound_assistant.objects.filter(hospital_id__in=hospital_ids)
-            Outbound_Hospital_patients=list(Outbound_Hospital.objects.filter(assistant_id__in=outbound_assistant_ids).select_related("patient_id__hospital"))
-            lookup = {}
-
-            for o in Outbound_Hospital_patients:
-                # print(o.patient)
-                key = (
-                    (o.patient_id.patient_name or '').strip().lower(),
-                    (o.patient_id.mobile_no or '').strip().lower(),
-                    (o.patient_id.hospital.name or '').strip().lower(),     # adjust if field name differs
-                )
-                if o.calling_process=='not_happened':
-                    if o.status=='queued':
-                        lookup[key]='queued'
-                    else:
-                        lookup[key]='not_connected'
-                else:
-                    lookup[key] = o.calling_process or "N/A"
-            # print("lookup-->",lookup)
-            # If 'limit' is not given, empty, or 'all' → fetch all
             if limit_param in ['', 'all']:
-                patients = queryset
+                patients = list(queryset)
             else:
                 try:
                     limit = int(limit_param)
-                    patients = queryset[:limit]
+                    patients = list(queryset[:limit])
                 except ValueError:
                     return Response({"msg": "Invalid limit value", "error": 1})
+
+            outbound_assistant_ids=Outbound_assistant.objects.filter(hospital_id__in=hospital_ids)
+            outbound_calls = Outbound_Hospital.objects.filter(assistant_id__in=outbound_assistant_ids).values('patient_id', 'calling_process', 'status')
+            lookup = {}
+            for o in outbound_calls:
+                p_id = str(o['patient_id'])
+                if o['calling_process'] == 'not_happened':
+                    lookup[p_id] = 'queued' if o['status'] == 'queued' else 'not_connected'
+                else:
+                    lookup[p_id] = o['calling_process'] or "not_connected"
+
             # Preload all texts related to hospitals in one query
-            hospital_ids = {p.hospital.id for p in patients}
+            hospital_ids_set = {p.hospital.id for p in patients}
             hospital_text_map = {
                 t.hospital_id: t.text
-                for t in TextModel.objects.filter(hospital_id__in=hospital_ids)
+                for t in TextModel.objects.filter(hospital_id__in=hospital_ids_set)
             }
+
+            gray_color="#6C757D"
             status_color_hex = {
                 "connected": "#28A745",
                 "not_connected": "#DC3545",
                 "queued": "#FFC107",
+                "in_progress": "#3B82F6"
             }
-            gray_color="#6C757D"
-            for p in patients:
-                key = (
-                    (p.patient_name or '').strip().lower(),
-                    (p.mobile_no or '').strip().lower(),
-                    (p.hospital.name or '').strip().lower(),
-                )
-                p.calling_progress = lookup.get(key, "N/A")
-                p.hex_color=status_color_hex.get(p.calling_progress,gray_color)
-                
+
             patient_data=[]
-            print(filter_params)
             for p in patients:
-                if len(filter_params)==0 or p.calling_progress.strip().lower() in filter_params:
+                p_id_str = str(p.id)
+                calling_progress = lookup.get(p_id_str, "not_connected")
+
+                if len(filter_params) == 0 or calling_progress.lower() in filter_params:
                     patient_data.append({
                         "id": p.id,
                         "patient_name": p.patient_name,
                         "mobile_no": p.mobile_no,
                         "department": p.department,
                         "hospital_name": p.hospital.name,
-                        "whatsapp_link":f"https://web.whatsapp.com/send?phone={p.mobile_no}&text={hospital_text_map.get(p.hospital.id, '')}",
-                        "calling_progress":p.calling_progress,
-                        "color":p.hex_color
-                        
+                        "whatsapp_link": f"https://web.whatsapp.com/send?phone={p.mobile_no}&text={hospital_text_map.get(p.hospital.id, '')}",
+                        "calling_progress": calling_progress,
+                        "color": status_color_hex.get(calling_progress, gray_color)
                     })
+
                
 
             
@@ -1347,9 +1320,9 @@ class PdfView(APIView):
             booked = base_qs.filter(call_outcome='positive').count()
             avg_res = connected.aggregate(avg=Avg(Cast('call_duration', FloatField())))['avg'] or 0
             
-            # Use Coalesce for interaction counts
-            total_outbound = Outbound_Hospital.objects.annotate(eff_date=Coalesce('started_at', 'created_at')).filter(patient_id__hospital=user_id, eff_date__date__range=[start_date, end_date]).count()
-            total_inbound = Inbound_Hospital.objects.annotate(eff_date=Coalesce('started_at', 'created_at')).filter(hospital_id=user_id, eff_date__date__range=[start_date, end_date]).count()
+            # Use started_at for interaction counts
+            total_outbound = Outbound_Hospital.objects.filter(patient_id__hospital=user_id, started_at__date__range=[start_date, end_date]).count()
+            total_inbound = Inbound_Hospital.objects.filter(hospital_id=user_id, started_at__date__range=[start_date, end_date]).count()
             
             dict_obj={
                 '{{reporting_period}}': f"{start_date} to {end_date}",
@@ -1363,14 +1336,14 @@ class PdfView(APIView):
             
             report_type = inputdict.get('report_type', 'detailed')
             if report_type == 'only_metrics':
-                # Aggressively clear all text-heavy placeholders
+                # Aggressively clear all text-heavy placeholders with a space
                 text_placeholders = [
                     'summary', 'analysis', 'recommendations', 'introduction', 
                     'conclusion', 'observation', 'patient_feedback_summary',
                     'executive_summary', 'detailed_analysis'
                 ]
                 for p in text_placeholders:
-                    dict_obj[f'{{{{{p}}}}}'] = ""
+                    dict_obj[f'{{{{{p}}}}}'] = " "
                 
                 template_filename = "Amor-Hospitals-Metrics-Only.docx"
             else:

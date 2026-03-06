@@ -1630,10 +1630,26 @@ class DoctorTranscriptionView(APIView):
     def get(self, request):
         try:
             user_id = Hospital_user_model.objects.get(id=request.user_id).hospital.id
+            
+            # Fetch all doctors for this hospital first (for the dropdown filter)
+            doctors = Doctor_model.objects.filter(hospital_id=user_id).values('id', 'name', 'department')
+            
+            # Fetch sessions
             sessions = MediVoiceSession.objects.filter(doctor__hospital_id=user_id).order_by('-created_at')
-            data = [{
-                "id": str(s.id), "doctorName": s.doctor.name, "patientName": s.patient_name, "overallSummary": s.overall_summary, "createdAt": s.created_at,
+            
+            session_data = [{
+                "id": str(s.id), 
+                "doctorName": s.doctor.name, 
+                "patientName": s.patient_name, 
+                "overallSummary": s.overall_summary, 
+                "createdAt": s.created_at,
                 "transcriptions": [{"speaker": t.speaker, "text": t.text, "timestamp": t.timestamp} for t in s.transcriptions.all().order_by('timestamp')]
             } for s in sessions]
-            return Response({"sessions": data, "error": 0})
-        except Exception as e: return Response({"msg": str(e), "error": 1})
+            
+            return Response({
+                "sessions": session_data, 
+                "doctors": list(doctors),
+                "error": 0
+            })
+        except Exception as e: 
+            return Response({"msg": str(e), "error": 1})

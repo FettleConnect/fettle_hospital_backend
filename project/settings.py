@@ -26,6 +26,11 @@ load_dotenv(os.path.join(BASE_DIR, '.env'))
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
 
+# Determine default SSL mode for database connections:
+# - In production (DEBUG=False), default to 'require' to enforce SSL.
+# - In development (DEBUG=True), default to 'prefer' to work with local Postgres without SSL.
+DB_SSL_MODE = os.getenv('DB_SSL_MODE') or ('require' if not DEBUG else 'prefer')
+
 ALLOWED_HOSTS = ['*']
 
 CORS_ORIGIN_ALLOW_ALL = True
@@ -104,7 +109,7 @@ DATABASES = {
         'USER': os.getenv('DB_USER', 'postgres'),
         'PASSWORD': os.getenv('DB_PASSWORD', 'fettledb'),
         'OPTIONS': {
-            'sslmode': os.getenv('DB_SSL_MODE', 'require'),
+            'sslmode': DB_SSL_MODE,
         },
     }
 }

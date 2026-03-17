@@ -35,6 +35,8 @@ services:
     profiles: [dev]
     restart: always
     env_file: .env.dev
+    environment:
+      RUN_MIGRATIONS: "true"
     ports:
       - "8000:8000"
     volumes:
@@ -53,6 +55,8 @@ services:
     command: celery -A project worker -l info -P gevent
     restart: always
     env_file: .env.dev
+    environment:
+      RUN_MIGRATIONS: "false"
     volumes:
       - .:/app
     depends_on:
@@ -68,6 +72,8 @@ services:
     profiles: [prod]
     restart: always
     env_file: .env.prod
+    environment:
+      RUN_MIGRATIONS: "true"
     ports:
       - "8000:8000"
     depends_on:
@@ -82,6 +88,8 @@ services:
     command: celery -A project worker -l info -P gevent
     restart: always
     env_file: .env.prod
+    environment:
+      RUN_MIGRATIONS: "false"
     depends_on:
       redis:
         condition: service_healthy

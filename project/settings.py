@@ -24,9 +24,14 @@ load_dotenv(os.path.join(BASE_DIR, '.env'))
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
 
-ALLOWED_HOSTS = ['*']
+# Determine default SSL mode for database connections:
+# - In production (DEBUG=False), default to 'require' to enforce SSL.
+# - In development (DEBUG=True), default to 'prefer' to work with local Postgres without SSL.
+DB_SSL_MODE = os.getenv('DB_SSL_MODE') or ('require' if not DEBUG else 'prefer')
+
+ALLOWED_HOSTS = [host.strip() for host in os.getenv('ALLOWED_HOSTS', '*').split(',') if host.strip()]
 
 CORS_ORIGIN_ALLOW_ALL = True
 CORS_ALLOW_ALL_ORIGINS = True
@@ -36,7 +41,16 @@ AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
 AWS_STORAGE_BUCKET_NAME = os.getenv('AWS_STORAGE_BUCKET_NAME')
 AWS_S3_REGION_NAME = os.getenv('AWS_S3_REGION_NAME')
 LIVEKIT_BUCKET_NAME = os.getenv('LIVEKIT_BUCKET_NAME')
-SECRET_KEY = os.getenv('SECRET_KEY') or 'django-insecure-ux!!gne%@sfd1q3-hf$p+v6xqx=4877v$lm$gqyhoeuy-r-5q#'
+SECRET_KEY = os.getenv('SECRET_KEY')
+
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = 'django-insecure-dev-only-change-me'
+    else:
+        raise ValueError('SECRET_KEY must be set when DEBUG is False')
+
+if not DEBUG and ALLOWED_HOSTS == ['*']:
+    raise ValueError('ALLOWED_HOSTS must be explicitly set when DEBUG is False')
 
 # Application definition
 
@@ -97,19 +111,20 @@ WSGI_APPLICATION = 'project.wsgi.application'
 # }
 DATABASES = {
     'default': {
-        "ENGINE": "django.db.backends.postgresql",
-        'NAME' : 'fettle_prod',
-        'PORT': 5432,
-        # 'HOST' : 'database-1.cnyyw6yagw6x.ap-south-1.rds.amazonaws.com',
-        'HOST':'fettleconnectdb.cnyyw6yagw6x.ap-south-1.rds.amazonaws.com',
-        'USER' : 'postgres',
-         'PASSWORD' : 'fettledb',
-         'OPTIONS': {
-            'sslmode': 'require',  # recommended for AWS RDS
-        }
-        
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.getenv('DB_NAME', 'fettle_dev'),
+        'PORT': int(os.getenv('DB_PORT', 5432)),
+        'HOST': os.getenv('DB_HOST', 'localhost'),
+        'USER': os.getenv('DB_USER', 'postgres'),
+        'PASSWORD': os.getenv('DB_PASSWORD', 'postgres' if DEBUG else ''),
+        'OPTIONS': {
+            'sslmode': DB_SSL_MODE,
+        },
     }
 }
+
+if not DEBUG and not DATABASES['default']['PASSWORD']:
+    raise ValueError('DB_PASSWORD must be set when DEBUG is False')
 
 
 # Password validation
@@ -158,4 +173,4 @@ CELERY_TIMEZONE = "Australia/Tasmania"
 CELERY_RESULT_BACKEND = 'django-db'
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
-CELERY_BROKER_URL="redis://localhost:6379/0"
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')

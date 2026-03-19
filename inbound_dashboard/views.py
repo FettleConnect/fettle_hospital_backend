@@ -32,6 +32,7 @@ from datetime import datetime
 
 # Create your views here.
 
+
 def make_naive(dt, tz_name="Asia/Kolkata"):
     import pytz
 

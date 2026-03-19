@@ -1,8 +1,10 @@
 import os
 
-os.environ.setdefault("DEBUG", "True")
-os.environ.setdefault("SECRET_KEY", "test-secret-key")
-os.environ.setdefault("ALLOWED_HOSTS", "localhost,127.0.0.1")
+# Force test-safe values even when the shell already exports production-like env vars.
+os.environ["DEBUG"] = "True"
+os.environ["SECRET_KEY"] = "test-secret-key"
+os.environ["ALLOWED_HOSTS"] = "localhost,127.0.0.1"
+os.environ.setdefault("DB_PASSWORD", "postgres")
 
 from .settings import *
 

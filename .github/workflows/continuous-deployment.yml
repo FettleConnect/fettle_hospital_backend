@@ -1,0 +1,71 @@
+name: Continuous Deployment
+
+on:
+  workflow_run:
+    workflows:
+      - Continuous Integration
+    types:
+      - completed
+  workflow_dispatch:
+
+concurrency:
+  group: cd-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  APP_IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/fettle-hospital-backend
+  LIVEKIT_SERVER_IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/fettle-livekit-server
+  LIVEKIT_SIP_IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/fettle-livekit-sip
+
+jobs:
+  deploy-production:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'main'
+      )
+    environment:
+      name: production
+
+    steps:
+      - name: Check deployment secret availability
+        id: deploy-check
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          if [ -n "$DEPLOY_HOST" ] && [ -n "$DEPLOY_USER" ] && [ -n "$DEPLOY_SSH_KEY" ] && [ -n "$DEPLOY_PATH" ] && [ -n "$GHCR_USERNAME" ] && [ -n "$GHCR_TOKEN" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy updated containers
+        if: steps.deploy-check.outputs.ready == 'true'
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd ${{ secrets.DEPLOY_PATH }}
+            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
+            export APP_PROD_IMAGE="${{ env.APP_IMAGE_NAME }}:latest"
+            export LIVEKIT_SERVER_IMAGE="${{ env.LIVEKIT_SERVER_IMAGE_NAME }}:latest"
+            export LIVEKIT_SIP_IMAGE="${{ env.LIVEKIT_SIP_IMAGE_NAME }}:latest"
+            docker compose --profile prod pull
+            docker compose --profile prod up -d
+
+      - name: Skip deployment
+        if: steps.deploy-check.outputs.ready != 'true'
+        run: echo "Deployment skipped because one or more deploy or GHCR secrets are not configured."

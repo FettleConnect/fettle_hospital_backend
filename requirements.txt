@@ -19,7 +19,6 @@ gevent
 requests
 boto3
 psycopg2-binary
-django-sslserver-v2
 python-dotenv
 openai
 langchain

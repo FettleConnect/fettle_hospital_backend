@@ -17,7 +17,7 @@ except ImportError:
     LANGCHAIN_AVAILABLE = False
 
 
-def _get_llm(model: str = 'gpt-4o', temperature: float = 0.3):
+def _get_llm(model: str = 'gpt-4.1', temperature: float = 0.3):
     """Initialize and return the LangChain LLM."""
     if not LANGCHAIN_AVAILABLE:
         raise ImportError(
@@ -66,7 +66,7 @@ def run_education_graph(system_prompt: str, conversation: list, user_message: st
     Run AI for general_education mode.
     Returns AI response string.
     """
-    llm = _get_llm(model='gpt-4o', temperature=0.4)
+    llm = _get_llm(model='gpt-4.1', temperature=0.4)
     messages = _build_messages(system_prompt, conversation, user_message)
     response = llm.invoke(messages)
     return _extract_content(response)
@@ -81,7 +81,7 @@ def run_internal_consultation(system_prompt: str, conversation: list, user_messa
     - Simply invoke llm.invoke(messages) and return
     - No clinical_override or purged_history logic
     """
-    llm = _get_llm(model='gpt-4o', temperature=0.2)
+    llm = _get_llm(model='gpt-4.1', temperature=0.2)
     messages = _build_messages(system_prompt, conversation, user_message)
 
     # FIX 4: Simply invoke and return — no purge, no clinical_override

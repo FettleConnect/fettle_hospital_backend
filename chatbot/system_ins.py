@@ -33,7 +33,7 @@ When generating a doctor's assessment draft, ALWAYS use EXACTLY these 6 sections
 3. Morphologic Justification
 4. Educational Treatment Framework
 5. Investigations Commonly Considered
-6. Educational References (formatted as markdown hyperlinks)
+6. Educational References (formatted as clickable markdown links)
 
 NEGATIVE FORMAT INSTRUCTIONS — NEVER USE THESE:
 - Do NOT use "Diagnosis" — use "Most Consistent With"

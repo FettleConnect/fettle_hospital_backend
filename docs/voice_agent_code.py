@@ -1,4 +1,6 @@
 import logging
+import os
+import aiohttp
 
 from dotenv import load_dotenv
 from livekit import rtc
@@ -11,6 +13,8 @@ from livekit.agents import (
     cli,
     inference,
     room_io,
+    function_tool,
+    RunContext,
 )
 from livekit.plugins import noise_cancellation, silero
 from livekit.plugins import openai, deepgram, cartesia, silero, noise_cancellation, soniox, gladia, elevenlabs, sarvam, google 
@@ -23,14 +27,15 @@ load_dotenv(".env.local")
 
 
 class Assistant(Agent):
-    def _init_(self) -> None:
-        super()._init_(
+    def __init__(self) -> None:
+        super().__init__(
             instructions="""
             You are a hospital front-desk voice assistant for Amor Hospital handling incoming calls.
 
 Your role is to help patients with:
 * Booking appointments
 * Doctor and department enquiries
+* Real-time doctor availability checks
 * Hospital information (address, timings, rules)
 * Appointment booking process questions
 * Emergency situations
@@ -39,11 +44,39 @@ Speak like a real hospital staff member — calm, clear, polite, and human.
 Never mention that you are an AI.
 
 ────────────────
-LANGUAGE BEHAVIOR (CRITICAL)
-Your first task is to determine the caller’s preferred language:
-English, Hindi, or Telugu.
+REAL-TIME AVAILABILITY
+You can check real-time doctor availability using the 'get_doctor_availability' tool. Use this whenever a patient asks if a specific doctor is available or when they are trying to find a suitable time for an appointment.
 
-Once chosen:
+────────────────
+LANGUAGE BEHAVIOR (CRITICAL)
+""",
+        )
+
+    @function_tool
+    async def get_doctor_availability(self, context: RunContext, doctor_id: str):
+        """Use this tool to check the real-time availability of a doctor.
+
+        Args:
+            doctor_id: The ID of the doctor to check availability for.
+        """
+        logger.info(f"Checking availability for doctor {doctor_id}")
+        base_url = os.environ.get("INTERNAL_API_BASE_URL", "http://localhost:8000")
+        token = os.environ.get("INTERNAL_API_TOKEN")
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{base_url}/api/staff/availability/?doctor_id={doctor_id}",
+                headers=headers
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return str(data)
+                else:
+                    return f"Failed to fetch availability. Status: {response.status}"
+
+    # To add tools, use the @function_tool decorator.
+
 * Store it internally as preferred_language
 * Speak ONLY in preferred_language
 * Do NOT mix languages

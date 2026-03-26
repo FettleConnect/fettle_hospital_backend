@@ -206,6 +206,7 @@ class TextModel(models.Model):
         Hospital_model, on_delete=models.CASCADE, related_name="text_hospital"
     )
     text = models.TextField(null=True, blank=True)
+    media_url = models.CharField(max_length=1000, null=True, blank=True)
 
 
 class Outbound_assistant(models.Model):
@@ -257,7 +258,9 @@ class Doctor_model(models.Model):
     name = models.CharField(max_length=255)
     email = models.EmailField(unique=True)
     password_hash = models.TextField()
+    mobile_number = models.CharField(max_length=20, blank=True, null=True)
     department = models.CharField(max_length=255)
+    availability = models.JSONField(default=dict, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def save(self, *args, **kwargs):

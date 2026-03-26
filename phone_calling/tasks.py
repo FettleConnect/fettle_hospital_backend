@@ -302,3 +302,80 @@ def process_inbound_calls(json_payload):
         return {"status": "success"}
     except Exception as e:
         return {"error": 1, "msg": str(e)}
+
+
+@shared_task
+def send_prescription_notifications(session_id):
+    from app.models import MediVoiceSession
+    try:
+        session = MediVoiceSession.objects.get(id=session_id)
+        doctor = session.doctor
+        patient_name = session.patient_name
+        patient_mobile = session.patient_mobile
+        patient_email = session.patient_email
+        summary = session.overall_summary
+
+        # Build the message
+        availability_info = f"Doctor is available: {doctor.availability}" if doctor.availability else "Please check doctor's profile for availability."
+        
+        message = f"Hello {patient_name}, this is from Dr. {doctor.name}'s office at {doctor.hospital.name}. " \
+                  f"Your consultation summary: {summary}. " \
+                  f"For follow-ups, contact: {doctor.mobile_number}. {availability_info}"
+        
+        # Send WhatsApp via existing utility
+        cloudconnect_whatsapp_msg(message, to_number=patient_mobile)
+        
+        # Email (Mock/Log for now)
+        if patient_email:
+            print(f"DEBUG: Sending prescription email to {patient_email} for patient {patient_name}")
+            # send_mail(
+            #     f"Consultation Summary - {doctor.hospital.name}",
+            #     message,
+            #     settings.DEFAULT_FROM_EMAIL,
+            #     [patient_email],
+            #     fail_silently=False,
+            # )
+            
+        return {"status": "success", "session_id": str(session_id)}
+    except Exception as e:
+        print(f"Error in send_prescription_notifications: {str(e)}")
+        return {"status": "error", "message": str(e)}
+
+
+@shared_task
+def reminder_task(session_id, reminder_type):
+    from app.models import MediVoiceSession
+    try:
+        session = MediVoiceSession.objects.get(id=session_id)
+        doctor = session.doctor
+        patient_name = session.patient_name
+        patient_mobile = session.patient_mobile
+        
+        msg = f"Reminder ({reminder_type}): This is {doctor.hospital.name}. We hope you're doing well after your consultation with Dr. {doctor.name}. " \
+              f"Please remember to follow the prescribed routine. Contact {doctor.mobile_number} for any queries."
+        
+        cloudconnect_whatsapp_msg(msg, to_number=patient_mobile)
+        return {"status": "success", "type": reminder_type}
+    except Exception as e:
+        print(f"Error in reminder_task: {str(e)}")
+        return {"status": "error", "message": str(e)}
+
+
+@shared_task
+def schedule_reminder_calls(session_id):
+    from datetime import timedelta
+    from django.utils import timezone
+    try:
+        # Schedule 24h reminder
+        eta_24h = timezone.now() + timedelta(hours=24)
+        reminder_task.apply_async(args=[session_id, "24h"], eta=eta_24h)
+        
+        # Schedule 1h reminder (Assuming 1 hour from now for immediate follow-up test or similar)
+        # Usually it would be relative to an appointment, but here we'll do 1h from now as requested.
+        eta_1h = timezone.now() + timedelta(hours=1)
+        reminder_task.apply_async(args=[session_id, "1h"], eta=eta_1h)
+        
+        return {"status": "scheduled", "session_id": str(session_id)}
+    except Exception as e:
+        print(f"Error in schedule_reminder_calls: {str(e)}")
+        return {"status": "error", "message": str(e)}

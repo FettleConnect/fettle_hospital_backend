@@ -1444,21 +1444,30 @@ class CommunityEngagement(APIView):
                 outcome = item["call_outcome"]
                 # Fetch detailed data for this outcome
                 details = (
-                    CallFeedbackModel.objects.filter(patient__hospital=user_id, call_outcome=outcome)
+                    CallFeedbackModel.objects.filter(
+                        patient__hospital=user_id, call_outcome=outcome
+                    )
                     .select_related("patient")
                     .order_by("-called_at")[:10]
                 )
-                feedback_distribution.append({
-                    "name": outcome.replace("_", " ").title(),
-                    "value": item["value"],
-                    "patients": [
-                        {
-                            "name": d.patient.patient_name,
-                            "date": d.called_at.strftime("%Y-%m-%d") if d.called_at else "N/A",
-                            "feedback": d.remarks or "No remarks provided."
-                        } for d in details
-                    ]
-                })
+                feedback_distribution.append(
+                    {
+                        "name": outcome.replace("_", " ").title(),
+                        "value": item["value"],
+                        "patients": [
+                            {
+                                "name": d.patient.patient_name,
+                                "date": (
+                                    d.called_at.strftime("%Y-%m-%d")
+                                    if d.called_at
+                                    else "N/A"
+                                ),
+                                "feedback": d.remarks or "No remarks provided.",
+                            }
+                            for d in details
+                        ],
+                    }
+                )
 
             # === Patient Intents (based on CommunityEngagementModel engagement types) ===
             intent_qs = (
@@ -1471,23 +1480,32 @@ class CommunityEngagement(APIView):
             for item in intent_qs:
                 etype = item["engagement_type"]
                 details = (
-                    CommunityEngagementModel.objects.filter(patient__hospital=user_id, engagement_type=etype)
+                    CommunityEngagementModel.objects.filter(
+                        patient__hospital=user_id, engagement_type=etype
+                    )
                     .select_related("patient")
                     .order_by("-created_at")[:10]
                 )
-                patient_intents.append({
-                    "name": etype.replace("_", " ").title(),
-                    "value": item["value"],
-                    "intent": etype.replace("_", " ").title(),
-                    "count": item["value"],
-                    "patients": [
-                        {
-                            "name": d.patient.patient_name,
-                            "date": d.created_at.strftime("%Y-%m-%d") if d.created_at else "N/A",
-                            "feedback": f"Engaged via {etype}"
-                        } for d in details
-                    ]
-                })
+                patient_intents.append(
+                    {
+                        "name": etype.replace("_", " ").title(),
+                        "value": item["value"],
+                        "intent": etype.replace("_", " ").title(),
+                        "count": item["value"],
+                        "patients": [
+                            {
+                                "name": d.patient.patient_name,
+                                "date": (
+                                    d.created_at.strftime("%Y-%m-%d")
+                                    if d.created_at
+                                    else "N/A"
+                                ),
+                                "feedback": f"Engaged via {etype}",
+                            }
+                            for d in details
+                        ],
+                    }
+                )
 
             return Response(
                 {
@@ -1757,8 +1775,8 @@ class EscalationEngagement(APIView):
                     "Leakage Prevented": "Missed Calls * 0.42 * 650",
                     "Staff Hours Saved": "Total Call Duration / 60",
                     "Equivalent FTE Freed": "Total Call Duration / 6000",
-                    "Cost Efficiency Value": "(Total Call Duration / 6000) * 40000"
-                }
+                    "Cost Efficiency Value": "(Total Call Duration / 6000) * 40000",
+                },
             }
             return Response(
                 {
@@ -1943,9 +1961,9 @@ class PdfView(APIView):
 
             if pdf_bytes:
                 response = HttpResponse(pdf_bytes, content_type="application/pdf")
-                response[
-                    "Content-Disposition"
-                ] = f'attachment; filename="report_{uuid.uuid4()}.pdf"'
+                response["Content-Disposition"] = (
+                    f'attachment; filename="report_{uuid.uuid4()}.pdf"'
+                )
                 return response
             else:
                 return Response({"error": 1, "errorMsg": "PDF generation failed"})
@@ -1969,12 +1987,18 @@ class TextView(APIView):
             media_url = None
             if media_file:
                 # Use absolute path for S3 upload
-                media_url = upload_to_s3(media_file, f"whatsapp_media/{uuid.uuid4()}_{media_file.name}")
+                media_url = upload_to_s3(
+                    media_file, f"whatsapp_media/{uuid.uuid4()}_{media_file.name}"
+                )
 
             # Update or create TextModel for hospital's default message
             text_obj, created = TextModel.objects.update_or_create(
                 hospital=hospital,
-                defaults={"text": text, "media_url": media_url} if text else {"media_url": media_url}
+                defaults=(
+                    {"text": text, "media_url": media_url}
+                    if text
+                    else {"media_url": media_url}
+                ),
             )
 
             if target_list_file:
@@ -1998,19 +2022,30 @@ class TextView(APIView):
 
                 if numbers:
                     from phone_calling.tasks import cloudconnect_whatsapp_msg
+
                     for num in numbers:
                         # Ensure number is a string and formatted
-                        num_str = str(int(float(num))) if isinstance(num, (int, float)) else str(num)
+                        num_str = (
+                            str(int(float(num)))
+                            if isinstance(num, (int, float))
+                            else str(num)
+                        )
                         msg = text if text else "Health Update from " + hospital.name
                         if media_url:
                             msg += f"\nView attachment: {media_url}"
                         cloudconnect_whatsapp_msg(msg, to_number=num_str)
 
-            return Response({
-                "error": 0, 
-                "msg": "Message broadcast initiated" if target_list_file else "Template saved", 
-                "media_url": media_url
-            })
+            return Response(
+                {
+                    "error": 0,
+                    "msg": (
+                        "Message broadcast initiated"
+                        if target_list_file
+                        else "Template saved"
+                    ),
+                    "media_url": media_url,
+                }
+            )
         except Exception as e:
             return Response({"error": 1, "msg": str(e)})
 
@@ -2256,9 +2291,13 @@ class MediVoiceSessionView(APIView):
                 medicines=d.get("medicines"),
                 revisit_date=d.get("revisitDate"),
                 revisit_time=d.get("revisitTime"),
-                meta_data=d.get("metaData", {})
+                meta_data=d.get("metaData", {}),
             )
-            from phone_calling.tasks import send_prescription_notifications, schedule_reminder_calls
+            from phone_calling.tasks import (
+                send_prescription_notifications,
+                schedule_reminder_calls,
+            )
+
             send_prescription_notifications.delay(s.id)
             schedule_reminder_calls.delay(s.id)
 
@@ -2384,19 +2423,23 @@ class StaffAvailabilityView(APIView):
 
     def get(self, request):
         try:
-            hospital_id = Hospital_user_model.objects.get(id=request.user_id).hospital.id
+            hospital_id = Hospital_user_model.objects.get(
+                id=request.user_id
+            ).hospital.id
             doctors = Doctor_model.objects.filter(hospital_id=hospital_id)
             data = []
             for doc in doctors:
-                data.append({
-                    'id': str(doc.id),
-                    'name': doc.name,
-                    'department': doc.department,
-                    'availability': doc.availability
-                })
-            return Response({'data': data, 'error': 0})
+                data.append(
+                    {
+                        "id": str(doc.id),
+                        "name": doc.name,
+                        "department": doc.department,
+                        "availability": doc.availability,
+                    }
+                )
+            return Response({"data": data, "error": 0})
         except Exception as e:
-            return Response({'msg': str(e), 'error': 1})
+            return Response({"msg": str(e), "error": 1})
 
 
 class MediVoiceSyncView(APIView):
@@ -2410,36 +2453,39 @@ class MediVoiceSyncView(APIView):
 
             data = request.data
             # We look for doctor by email or mobile if provided in data
-            doctor_email = data.get('doctorEmail')
+            doctor_email = data.get("doctorEmail")
             try:
                 doctor = Doctor_model.objects.get(email=doctor_email)
             except Doctor_model.DoesNotExist:
-                return Response({'msg': 'Doctor not found', 'error': 1})
+                return Response({"msg": "Doctor not found", "error": 1})
 
             session = MediVoiceSession.objects.create(
                 doctor=doctor,
-                patient_name=data.get('patientName'),
-                patient_mobile=data.get('patientMobile'),
-                overall_summary=data.get('overallSummary'),
-                meta_data=data.get('metaData', {})
+                patient_name=data.get("patientName"),
+                patient_mobile=data.get("patientMobile"),
+                overall_summary=data.get("overallSummary"),
+                meta_data=data.get("metaData", {}),
             )
 
-            transcriptions = data.get('transcriptions', [])
+            transcriptions = data.get("transcriptions", [])
             for t in transcriptions:
                 MediVoiceTranscription.objects.create(
                     session=session,
-                    speaker=t.get('speaker'),
-                    text=t.get('text'),
-                    timestamp=t.get('timestamp', 0.0)
+                    speaker=t.get("speaker"),
+                    text=t.get("text"),
+                    timestamp=t.get("timestamp", 0.0),
                 )
 
-            from phone_calling.tasks import send_prescription_notifications, schedule_reminder_calls
+            from phone_calling.tasks import (
+                send_prescription_notifications,
+                schedule_reminder_calls,
+            )
+
             send_prescription_notifications.delay(session.id)
             schedule_reminder_calls.delay(session.id)
 
-            return Response({'msg': 'Sync successful', 'session_id': str(session.id), 'error': 0})
+            return Response(
+                {"msg": "Sync successful", "session_id": str(session.id), "error": 0}
+            )
         except Exception as e:
-            return Response({'msg': str(e), 'error': 1})
-
-
-
+            return Response({"msg": str(e), "error": 1})

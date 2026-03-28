@@ -74,18 +74,15 @@ from chatbot.views import (
 
 urlpatterns = [
     path("api/admin/", admin.site.urls),
-
     # ----------------------------------------------------------------
     # Dermatology chatbot — patient auth
     # ----------------------------------------------------------------
     path("auth/google/", GoogleAuthView.as_view()),
-
     # ----------------------------------------------------------------
     # Unified token validation (handles both patient + doctor tokens)
     # Must come BEFORE the legacy validateToken to take precedence.
     # ----------------------------------------------------------------
     path("api/validate_token/", DermatologyValidateTokenView.as_view()),
-
     # ----------------------------------------------------------------
     # Dermatology chatbot — patient endpoints
     # ----------------------------------------------------------------
@@ -93,13 +90,11 @@ urlpatterns = [
     path("api/chat_history/", ChatView.as_view()),
     path("api/consultation_list/", ConsultationListView.as_view()),
     path("api/archive_consultation/", ArchiveConsultationView.as_view()),
-
     # ----------------------------------------------------------------
     # Dermatology chatbot — doctor endpoints
     # ----------------------------------------------------------------
     path("api/doctor_chat_view/", DoctorChatAPIView.as_view()),
     path("api/doctor_send_response/", DoctorSendResponseView.as_view()),
-
     # ----------------------------------------------------------------
     # Existing hospital management endpoints (unchanged)
     # ----------------------------------------------------------------

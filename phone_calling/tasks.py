@@ -374,7 +374,6 @@ def reminder_task(session_id, reminder_type):
     try:
         session = MediVoiceSession.objects.get(id=session_id)
         doctor = session.doctor
-        patient_name = session.patient_name
         patient_mobile = session.patient_mobile
         revisit_date = session.revisit_date
         revisit_time = session.revisit_time

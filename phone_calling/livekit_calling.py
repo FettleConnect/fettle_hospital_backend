@@ -29,7 +29,9 @@ async def _dispatch_call(phone_number: str, id_key: str):
         try:
             await livekit_api.sip.create_sip_participant(
                 api.CreateSipParticipantRequest(
-                    sip_trunk_id=os.getenv("SIP_OUTBOUND_TRUNK_ID"), # Needs to be set in .env
+                    sip_trunk_id=os.getenv(
+                        "SIP_OUTBOUND_TRUNK_ID"
+                    ),  # Needs to be set in .env
                     sip_call_to=phone_number,
                     room_name=id_key,
                     participant_name="Patient",

@@ -41,6 +41,7 @@ from app.views import (
     DoctorManagementView,
     MediVoiceSyncView,
     StaffAvailabilityView,
+    MediVoicePrescriptionPdfView,
 )
 from phone_calling.views import (
     Outbound_call,
@@ -123,6 +124,7 @@ urlpatterns = [
     path("api/doctor/login/", doctor_login_view.as_view()),
     path("api/medivoice/sessions/", MediVoiceSessionView.as_view()),
     path("api/medivoice/sync/", MediVoiceSyncView.as_view()),
+    path("api/medivoice/prescription/<uuid:session_id>/", MediVoicePrescriptionPdfView.as_view()),
     path("api/staff/availability/", StaffAvailabilityView.as_view()),
     path("api/hospital/doctor_transcripts/", DoctorTranscriptionView.as_view()),
     path("api/roi_metrics/", ROIMetrics.as_view()),

@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        @page {
+            size: A4;
+            margin: 0;
+        }
+        body {
+            font-family: 'Helvetica', 'Arial', sans-serif;
+            color: #1f2937;
+            margin: 0;
+            padding: 0;
+            line-height: 1.5;
+            background: #ffffff;
+        }
+        .sheet {
+            padding: 40px;
+        }
+        .header {
+            border-top: 10px solid #4a419a;
+            border-bottom: 4px solid #9b5bb0;
+            padding: 30px 0 20px;
+            margin-bottom: 30px;
+        }
+        .header-content {
+            display: table;
+            width: 100%;
+        }
+        .hospital-brand {
+            display: table-cell;
+            vertical-align: top;
+        }
+        .hospital-name {
+            color: #4a419a;
+            font-size: 28px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin: 0;
+        }
+        .hospital-contact {
+            display: table-cell;
+            text-align: right;
+            vertical-align: top;
+            font-size: 11px;
+            color: #4e486d;
+            border-left: 3px solid rgba(74, 65, 154, 0.3);
+            padding-left: 20px;
+        }
+        .document-title {
+            margin-top: 20px;
+            font-size: 24px;
+            color: #4a419a;
+            border-top: 1px solid #ddd8ef;
+            padding-top: 10px;
+        }
+        .meta-grid {
+            display: table;
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 10px;
+            margin-bottom: 30px;
+            background: #fbfaff;
+            padding: 10px;
+            border-bottom: 1px solid #ebe5f7;
+        }
+        .meta-row {
+            display: table-row;
+        }
+        .meta-item {
+            display: table-cell;
+            background: white;
+            border: 1px solid #e5def4;
+            border-radius: 12px;
+            padding: 12px;
+            width: 50%;
+        }
+        .label {
+            display: block;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #6b6787;
+            margin-bottom: 4px;
+        }
+        .value {
+            font-size: 13px;
+            font-weight: 600;
+            color: #262241;
+        }
+        .section {
+            margin-bottom: 25px;
+            border: 1px solid #e7e0f5;
+            border-radius: 12px;
+            padding: 20px;
+        }
+        .section h2 {
+            margin: 0 0 12px;
+            color: #4a419a;
+            font-size: 16px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+        .section p {
+            margin: 0;
+            font-size: 13px;
+            color: #374151;
+        }
+        .medication-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        .medication-table th {
+            text-align: left;
+            padding: 12px;
+            background: #f6f2fb;
+            color: #4a419a;
+            font-size: 11px;
+            text-transform: uppercase;
+            border-bottom: 1px solid #e5def4;
+        }
+        .medication-table td {
+            padding: 12px;
+            border-bottom: 1px solid #eee8f8;
+            font-size: 13px;
+            color: #262241;
+        }
+        .footer {
+            margin-top: 50px;
+            text-align: center;
+            font-size: 10px;
+            color: #9ca3af;
+            border-top: 1px solid #f3f4f6;
+            padding-top: 20px;
+        }
+        ul {
+            margin: 0;
+            padding-left: 20px;
+        }
+        li {
+            font-size: 13px;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="sheet">
+        <div class="header">
+            <div class="header-content">
+                <div class="hospital-brand">
+                    <h1 class="hospital-name">{{hospital_name}}</h1>
+                    <p style="font-size: 10px; color: #6b6787; margin: 5px 0 0;">{{hospital_address|default:""}}</p>
+                </div>
+                <div class="hospital-contact">
+                    <p>{{hospital_phone|default:""}}</p>
+                    <p>{{hospital_email|default:""}}</p>
+                </div>
+            </div>
+            <h2 class="document-title">Medical Prescription</h2>
+        </div>
+
+        <div class="meta-grid">
+            <div class="meta-row">
+                <div class="meta-item">
+                    <span class="label">Patient Name</span>
+                    <span class="value">{{patient_name}}</span>
+                </div>
+                <div class="meta-item">
+                    <span class="label">Doctor</span>
+                    <span class="value">Dr. {{doctor_name}}</span>
+                </div>
+            </div>
+            <div class="meta-row">
+                <div class="meta-item">
+                    <span class="label">Consultation Date</span>
+                    <span class="value">{{created_at|date:"M d, Y • H:i"}}</span>
+                </div>
+                <div class="meta-item">
+                    <span class="label">Revisit Date</span>
+                    <span class="value">{% if revisit_date %}{{revisit_date|date:"M d, Y"}}{% else %}Not scheduled{% endif %}</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Clinical Summary</h2>
+            <p>{{clinical_summary|default:"No clinical summary recorded."}}</p>
+        </div>
+
+        {% if diagnosis %}
+        <div class="section">
+            <h2>Diagnosis</h2>
+            <p>{{diagnosis}}</p>
+        </div>
+        {% endif %}
+
+        <div class="section" style="padding: 0; overflow: hidden;">
+            <h2 style="padding: 20px 20px 5px;">Medication Prescribed</h2>
+            {% if medicines %}
+            <table class="medication-table">
+                <thead>
+                    <tr>
+                        <th>Medicine</th>
+                        <th>Dosage</th>
+                        <th>Duration / Instructions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for med in medicines %}
+                    <tr>
+                        <td style="font-weight: bold;">{{med.name|default:med.medicationName}}</td>
+                        <td>{{med.dosage}}</td>
+                        <td>{{med.duration|default:med.instructions}}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p style="padding: 0 20px 20px; font-style: italic; color: #9ca3af;">No medications prescribed.</p>
+            {% endif %}
+        </div>
+
+        {% if meta_data.testsPrescribed %}
+        <div class="section">
+            <h2>Tests Prescribed</h2>
+            <ul>
+                {% for test in meta_data.testsPrescribed %}
+                <li>{{test}}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if meta_data.nextSteps %}
+        <div class="section">
+            <h2>Next Steps</h2>
+            <ul>
+                {% for step in meta_data.nextSteps %}
+                <li>{{step}}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        <div class="footer">
+            This is a computer-generated prescription. No signature required.
+            <br>
+            Powered by Fettle Connect & MediVoice AI
+        </div>
+    </div>
+</body>
+</html>

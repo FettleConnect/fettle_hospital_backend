@@ -2407,6 +2407,11 @@ class DoctorTranscriptionView(APIView):
                     "patientName": s.patient_name,
                     "patientMobile": s.patient_mobile,
                     "overallSummary": s.overall_summary,
+                    "diagnosis": s.diagnosis,
+                    "medicines": s.medicines,
+                    "revisit_date": s.revisit_date,
+                    "revisit_time": s.revisit_time,
+                    "metaData": s.meta_data,
                     "createdAt": s.created_at,
                     "transcriptions": [
                         {"speaker": t.speaker, "text": t.text, "timestamp": t.timestamp}
@@ -2469,16 +2474,22 @@ class MediVoiceSyncView(APIView):
             except Doctor_model.DoesNotExist:
                 return Response({"msg": "Doctor not found", "error": 1})
             metadata_obj = data.get("metaData", {})
+            # Map fields from pwa-plan if they exist
+            diagnosis = metadata_obj.get("diagnosis") or metadata_obj.get("clinicalSummary")
+            medicines = metadata_obj.get("medicines") or metadata_obj.get("medications")
+            revisit_date = metadata_obj.get("revisit_date") or metadata_obj.get("revisitDate")
+            revisit_time = metadata_obj.get("revisit_time")
+
             session = MediVoiceSession.objects.create(
                 doctor=doctor,
                 patient_name=data.get("patientName"),
                 patient_mobile=data.get("patientMobile"),
                 patient_email=data.get("patientEmail"),
                 overall_summary=data.get("overallSummary"),
-                diagnosis=metadata_obj.get("diagnosis"),
-                medicines=metadata_obj.get("medicines"),
-                revisit_date=metadata_obj.get("revisit_date"),
-                revisit_time=metadata_obj.get("revisit_time"),
+                diagnosis=diagnosis,
+                medicines=medicines,
+                revisit_date=revisit_date,
+                revisit_time=revisit_time,
                 meta_data=metadata_obj,
             )
 

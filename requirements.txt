@@ -26,7 +26,7 @@ openai
 paypalrestsdk
 langchain
 langchain-openai
-langchain-core
+langchain-core>=1.2.28
 langgraph
 livekit-agents[silero,turn-detector]~=1.3
 livekit-plugins-noise-cancellation~=0.2

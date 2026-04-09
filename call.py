@@ -9,7 +9,7 @@ if len(sys.argv) < 2:
 phone_number = sys.argv[1]
 room_name = f'manual_call_{os.urandom(4).hex()}'
 
-# Ensure LIVEKIT_URL is used (public IP for host-to-container signal)
+# USE PUBLIC IP FOR SIGNALING FROM CONTAINER TO HOST
 livekit_url = 'http://165.232.185.104:7880'
 
 cmd = [

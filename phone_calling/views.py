@@ -66,6 +66,16 @@ class Outbound_call(APIView):
                 return Response(
                     {"msg": "Assistant exists but assistant_id is empty", "error": 1}
                 )
+
+            # CONCURRENCY CHECK: Limit to 3 active calls
+            active_calls_count = Outbound_Hospital.objects.filter(status="in-progress").count()
+            if active_calls_count >= 3:
+                return Response({
+                    "msg": "Maximum concurrent call capacity (3) reached. Please wait for active calls to finish.",
+                    "error": 1,
+                    "active_calls": active_calls_count
+                }, status=429)
+
             hospital_ids = [hospital_obj.id]
             start_date_str = payload.get("start_date")
             end_date_str = payload.get("end_date")

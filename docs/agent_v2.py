@@ -38,7 +38,7 @@ server.setup_fnc = prewarm
 
 @server.rtc_session
 async def entrypoint(ctx: JobContext):
-    # CORRECT INITIALIZATION: Use STTOptions with language_hints
+    # Corrected Soniox STT initialization
     stt_instance = soniox.STT(
         api_key=os.environ.get("SONIOX_API_KEY"),
         params=soniox.STTOptions(
@@ -53,8 +53,8 @@ async def entrypoint(ctx: JobContext):
         tts=cartesia.TTS(
             model="sonic-3",
             voice="927c55a9-74a9-4272-871e-a559c8989abe"),
-        # Optimized Turn Detection: Increase threshold to 0.7 to reduce stuttering
-        turn_detection=MultilingualModel(threshold=0.7),
+        # CORRECT PARAMETER: unlikely_threshold instead of threshold
+        turn_detection=MultilingualModel(unlikely_threshold=0.7),
         vad=ctx.proc.userdata["vad"],
     )
     

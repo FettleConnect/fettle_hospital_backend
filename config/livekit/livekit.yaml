@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 port: 7880
 log_level: info
 
@@ -16,3 +17,23 @@ redis:
 
 turn:
   enabled: false
+=======
+port: 7880
+log_level: info
+
+keys:
+  API5Jmt5us6g875: ZPxu6uKWuj7KLpK16j2lYQ9FFFy9ESqHDXEUXdmDafR
+
+rtc:
+  node_ip: 165.232.185.104
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 60000
+  use_external_ip: true
+
+redis:
+  address: 127.0.0.1:6379
+
+turn:
+  enabled: false
+>>>>>>> origin/master

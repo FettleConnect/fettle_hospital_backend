@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 services:
   redis:
     image: redis:7-alpine
@@ -157,3 +158,164 @@ services:
 
 volumes:
   pgdata_dev:
+=======
+services:
+  redis:
+    image: redis:7-alpine
+    restart: always
+    profiles: [dev, prod]
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  db:
+    image: postgres:16-alpine
+    profiles: [dev]
+    restart: always
+    env_file:
+      - path: .env.dev
+        required: false
+    environment:
+      POSTGRES_DB: ${DB_NAME:-fettle_dev}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    volumes:
+      - pgdata_dev:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      target: dev
+    profiles: [dev]
+    restart: always
+    env_file:
+      - path: .env.dev
+        required: false
+    environment:
+      RUN_MIGRATIONS: "true"
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery:
+    build:
+      context: .
+      target: dev
+    profiles: [dev]
+    command: celery -A project worker -l info -P gevent
+    restart: always
+    env_file:
+      - path: .env.dev
+        required: false
+    environment:
+      RUN_MIGRATIONS: "false"
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web-prod:
+    build:
+      context: .
+      target: prod
+    profiles: [prod]
+    restart: always
+    env_file:
+      - path: .env.prod
+        required: false
+    environment:
+      RUN_MIGRATIONS: "true"
+    command:
+      - python
+      - manage.py
+      - runsslserver
+      - 0.0.0.0:8000
+      - --certificate
+      - /app/config/tls/fullchain.pem
+      - --key
+      - /app/config/tls/privkey.pem
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  celery-prod:
+    build:
+      context: .
+      target: prod
+    profiles: [prod]
+    command: celery -A project worker -l info -P gevent
+    restart: always
+    env_file:
+      - path: .env.prod
+        required: false
+    environment:
+      RUN_MIGRATIONS: "false"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  livekit-server:
+    build:
+      context: .
+      dockerfile: docker/livekit-server.Dockerfile
+    profiles: [prod]
+    restart: always
+    env_file:
+      - path: .env.prod
+        required: false
+    command: --config /etc/livekit/livekit.yaml
+    working_dir: /etc/livekit
+    network_mode: host
+    volumes:
+      - ./config/livekit/livekit.yaml:/etc/livekit/livekit.yaml
+    depends_on:
+      redis:
+        condition: service_healthy
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+
+  livekit-sip:
+    build:
+      context: .
+      dockerfile: docker/livekit-sip.Dockerfile
+    profiles: [prod]
+    restart: always
+    env_file:
+      - path: .env.prod
+        required: false
+    command: --config /etc/livekit/sip.yaml
+    working_dir: /etc/livekit
+    network_mode: host
+    volumes:
+      - ./config/livekit/sip.yaml:/etc/livekit/sip.yaml
+    depends_on:
+      livekit-server:
+        condition: service_started
+
+volumes:
+  pgdata_dev:
+>>>>>>> origin/master

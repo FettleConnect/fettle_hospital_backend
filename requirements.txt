@@ -1,9 +1,9 @@
-Django
+Django>=5.2.13
 gunicorn
 django-cors-headers
-djangorestframework
+djangorestframework>=3.16.1
 djangorestframework-simplejwt
-PyJWT
+PyJWT>=2.12.1
 pandas
 numpy
 django-sslserver-v2
@@ -16,7 +16,7 @@ redis
 celery
 django-celery-results
 gevent
-requests
+requests>=2.33.1
 boto3
 psycopg2-binary
 weasyprint
@@ -34,3 +34,7 @@ livekit-agents[openai]~=1.3
 livekit-agents[elevenlabs]~=1.3
 livekit-agents[deepgram,cartesia,soniox,gladia,elevenlabs,sarvam,google]~=1.3
 pytest
+aiohttp>=3.13.5
+cryptography>=46.0.7
+pyasn1>=0.6.3
+setuptools>=82.0.1

@@ -2407,6 +2407,11 @@ class DoctorTranscriptionView(APIView):
                     "patientName": s.patient_name,
                     "patientMobile": s.patient_mobile,
                     "overallSummary": s.overall_summary,
+                    "diagnosis": s.diagnosis,
+                    "medicines": s.medicines,
+                    "revisit_date": s.revisit_date,
+                    "revisit_time": s.revisit_time,
+                    "metaData": s.meta_data,
                     "createdAt": s.created_at,
                     "transcriptions": [
                         {"speaker": t.speaker, "text": t.text, "timestamp": t.timestamp}
@@ -2469,16 +2474,26 @@ class MediVoiceSyncView(APIView):
             except Doctor_model.DoesNotExist:
                 return Response({"msg": "Doctor not found", "error": 1})
             metadata_obj = data.get("metaData", {})
+            # Map fields from pwa-plan if they exist
+            diagnosis = metadata_obj.get("diagnosis") or metadata_obj.get(
+                "clinicalSummary"
+            )
+            medicines = metadata_obj.get("medicines") or metadata_obj.get("medications")
+            revisit_date = metadata_obj.get("revisit_date") or metadata_obj.get(
+                "revisitDate"
+            )
+            revisit_time = metadata_obj.get("revisit_time")
+
             session = MediVoiceSession.objects.create(
                 doctor=doctor,
                 patient_name=data.get("patientName"),
                 patient_mobile=data.get("patientMobile"),
                 patient_email=data.get("patientEmail"),
                 overall_summary=data.get("overallSummary"),
-                diagnosis=metadata_obj.get("diagnosis"),
-                medicines=metadata_obj.get("medicines"),
-                revisit_date=metadata_obj.get("revisit_date"),
-                revisit_time=metadata_obj.get("revisit_time"),
+                diagnosis=diagnosis,
+                medicines=medicines,
+                revisit_date=revisit_date,
+                revisit_time=revisit_time,
                 meta_data=metadata_obj,
             )
 
@@ -2508,3 +2523,52 @@ class MediVoiceSyncView(APIView):
             )
         except Exception as e:
             return Response({"msg": str(e), "error": 1})
+
+
+class MediVoicePrescriptionPdfView(APIView):
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request, session_id):
+        try:
+            # We use request.user_id if hospital login, but for prescriptions
+            # we might want to allow access if session belongs to hospital
+            session = MediVoiceSession.objects.select_related(
+                "doctor", "doctor__hospital"
+            ).get(id=session_id)
+
+            # Context for template
+            context = {
+                "hospital_name": session.doctor.hospital.name,
+                "hospital_address": getattr(session.doctor.hospital, "address", ""),
+                "hospital_phone": getattr(session.doctor.hospital, "phone", ""),
+                "hospital_email": getattr(session.doctor.hospital, "email", ""),
+                "patient_name": session.patient_name,
+                "doctor_name": session.doctor.name,
+                "created_at": session.created_at,
+                "revisit_date": session.revisit_date,
+                "clinical_summary": session.overall_summary,
+                "diagnosis": session.diagnosis,
+                "medicines": session.medicines,
+                "meta_data": session.meta_data or {},
+            }
+
+            html_string = render_to_string("prescription_template.html", context)
+            from .utils.pdf_generator import generate_pdf_from_html
+
+            pdf_bytes = generate_pdf_from_html(html_string)
+
+            if pdf_bytes:
+                response = HttpResponse(pdf_bytes, content_type="application/pdf")
+                # Use a safe filename
+                safe_name = session.patient_name.replace(" ", "_").replace("/", "_")
+                filename = f"prescription_{safe_name}_{session.created_at.strftime('%Y%m%d')}.pdf"
+                response["Content-Disposition"] = f'attachment; filename="{filename}"'
+                return response
+            else:
+                return Response(
+                    {"error": 1, "errorMsg": "PDF generation failed"}, status=500
+                )
+        except MediVoiceSession.DoesNotExist:
+            return Response({"error": 1, "errorMsg": "Session not found"}, status=404)
+        except Exception as e:
+            return Response({"error": 1, "errorMsg": str(e)}, status=500)

@@ -37,6 +37,11 @@ ALLOWED_HOSTS = [
     host.strip() for host in os.getenv("ALLOWED_HOSTS", "*").split(",") if host.strip()
 ]
 
+CSRF_TRUSTED_ORIGINS = [
+    "https://hospital.fettleconnect.com",
+    "https://*.fettleconnect.com",
+]
+
 CORS_ORIGIN_ALLOW_ALL = True
 CORS_ALLOW_ALL_ORIGINS = True
 

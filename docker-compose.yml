@@ -104,6 +104,9 @@ services:
       - /app/config/tls/fullchain.pem
       - --key
       - /app/config/tls/privkey.pem
+    volumes:
+      - /etc/letsencrypt/live/hospital.fettleconnect.com/fullchain.pem:/app/config/tls/fullchain.pem
+      - /etc/letsencrypt/live/hospital.fettleconnect.com/privkey.pem:/app/config/tls/privkey.pem
     ports:
       - "8000:8000"
     networks:

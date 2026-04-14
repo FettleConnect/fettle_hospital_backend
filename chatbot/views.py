@@ -309,14 +309,24 @@ class DermatologyValidateTokenView(APIView):
                 )
             else:
                 # Delegate to existing Doctor_model for doctor tokens
+                # Supports dual-key lookup (email or mobile)
                 from app.models import Doctor_model
+                from django.db.models import Q
 
-                doctor = Doctor_model.objects.get(email=email)
+                try:
+                    doctor = Doctor_model.objects.get(
+                        Q(email=email) | Q(mobile_number=email)
+                    )
+                except Doctor_model.DoesNotExist:
+                    # Try user_id if email lookup fails (for legacy tokens)
+                    doctor = Doctor_model.objects.get(id=request.user_id)
+
                 return Response(
                     {
                         "error": 0,
                         "name": doctor.name,
                         "email": doctor.email,
+                        "mobile_no": doctor.mobile_number,
                         "role": "doctor",
                     }
                 )

@@ -1,10 +1,13 @@
 services:
   redis:
     image: redis:7-alpine
+    command: redis-server --save 60 1 --loglevel warning
     restart: always
     profiles: [dev, prod]
     ports:
       - "127.0.0.1:6379:6379"
+    volumes:
+      - redisdata:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -104,7 +107,7 @@ services:
       context: .
       target: prod
     profiles: [prod]
-    command: celery -A project worker -l info -P gevent
+    command: celery -A project worker -l info -P gevent -c 3
     restart: always
     env_file:
       - path: .env.prod
@@ -157,3 +160,4 @@ services:
 
 volumes:
   pgdata_dev:
+  redisdata:

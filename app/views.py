@@ -1251,9 +1251,54 @@ class Patientengagement(APIView):
             agg = fb_qs.aggregate(avg_dur=Avg(Cast("call_duration", FloatField())))
             avg_dur = agg["avg_dur"] or 0
 
+            label_map = {
+                "positive": "Positive",
+                "negative": "Negative",
+                "no_feedback": "Neutral",
+                "escalated": "Escalated",
+            }
+            feedback_dict = {label: [] for label in label_map.values()}
+
+            def make_naive(dt, tz_name="Asia/Kolkata"):
+                import pytz
+
+                if dt is None:
+                    return None
+                target_tz = pytz.timezone(tz_name)
+                if dt.tzinfo is not None:
+                    return dt.astimezone(target_tz).replace(tzinfo=None)
+                return pytz.utc.localize(dt).astimezone(target_tz).replace(tzinfo=None)
+
+            for item in fb_qs:
+                label = label_map.get(item.call_outcome, item.call_outcome.capitalize())
+                remarks = item.remarks
+                if remarks:
+                    junk_patterns = [
+                        "call details only include timestamp",
+                        "no conversation or outcome recorded",
+                        "no meaningful feedback",
+                        "no conversation recorded",
+                        "call connected but no conversation",
+                    ]
+                    if any(pattern in remarks.lower() for pattern in junk_patterns):
+                        continue
+
+                    feedback_dict.setdefault(label, []).append({
+                        "patient_name": item.patient.patient_name,
+                        "remark": remarks,
+                        "mobile_no": item.patient.mobile_no,
+                        "feedback_at": make_naive(item.called_at)
+                    })
+
+            feedback_data = [
+                {"feedback": label, "count": len(entries), "remarks": entries}
+                for label, entries in feedback_dict.items()
+            ]
+
             return Response(
                 {
                     "contactsData": data,
+                    "feedbackData": feedback_data,
                     "callAnswerData": [
                         {
                             "name": "Answered",
@@ -2123,12 +2168,12 @@ class ROIMetrics(APIView):
                         {
                             "name": "Revenue Influenced",
                             "value": booked * 650,
-                            "unit": "â‚¹",
+                            "unit": "",
                         },
                         {
                             "name": "Leakage Prevented",
                             "value": int(missed * 0.42 * 650),
-                            "unit": "â‚¹",
+                            "unit": "",
                         },
                     ],
                     "roi_efficiency": [
@@ -2145,7 +2190,7 @@ class ROIMetrics(APIView):
                         {
                             "name": "Cost Efficiency Value",
                             "value": int(tdur / 6000 * 40000),
-                            "unit": "â‚¹",
+                            "unit": "",
                         },
                     ],
                     "error": 0,
@@ -2202,7 +2247,27 @@ class DepartmentAnalytics(APIView):
                         "revenue": b * 650,
                     }
                 )
-            return Response({"department_table": data, "error": 0})
+
+            # Calculate top intents for ROI pie chart
+            intent_qs = (
+                f_qs.values("call_outcome")
+                .annotate(value=Count("id"))
+                .order_by("-value")
+            )
+            top_intents = []
+            for item in intent_qs:
+                outcome = item.get("call_outcome")
+                if outcome:
+                    top_intents.append({
+                        "intent": outcome.replace("_", " ").title(),
+                        "value": item["value"]
+                    })
+
+            return Response({
+                "department_table": data,
+                "top_intents": top_intents,
+                "error": 0
+            })
         except Exception as e:
             return Response({"error": 1, "msg": str(e)})
 
@@ -2332,7 +2397,9 @@ class DoctorManagementView(APIView):
                     "id": str(d.id),
                     "name": d.name,
                     "email": d.email,
+                    "mobile_no": d.mobile_number,
                     "department": d.department,
+                    "availability": d.availability,
                     "created_at": d.created_at,
                 }
                 for d in doctors
@@ -2355,20 +2422,33 @@ class DoctorManagementView(APIView):
                 doctor.save()
                 return Response({"msg": "Password reset to default", "error": 0})
 
+            if action == "update_staff":
+                doctor = Doctor_model.objects.get(id=payload.get("id"), hospital_id=user_id)
+                if "mobile_no" in payload:
+                    doctor.mobile_number = payload.get("mobile_no")
+                if "availability" in payload:
+                    doctor.availability = payload.get("availability")
+                doctor.save()
+                return Response({"msg": "Staff updated successfully", "error": 0})
+
+            # Create new doctor using mobile_no as primary identifier if email not provided
+            email = payload.get("email") or f"{payload.get('mobile_no')}@fettle.ai"
             doctor, created = Doctor_model.objects.get_or_create(
-                email=payload.get("email"),
+                mobile_number=payload.get("mobile_no"),
                 defaults={
                     "hospital_id": user_id,
+                    "email": email,
                     "name": payload.get("name"),
                     "department": payload.get("department"),
+                    "availability": payload.get("availability", {}),
                     "password_hash": payload.get(
                         "password", "doctorpassword"
-                    ),  # Default if none provided
+                    ),
                 },
             )
             if not created:
                 return Response(
-                    {"msg": "Doctor with this email already exists", "error": 1}
+                    {"msg": "Doctor with this mobile number already exists", "error": 1}
                 )
             return Response(
                 {"msg": "Doctor account created", "id": str(doctor.id), "error": 0}

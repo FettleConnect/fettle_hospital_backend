@@ -36,7 +36,7 @@ def prewarm(proc: JobProcess):
     proc.userdata["vad"] = silero.VAD.load()
 server.setup_fnc = prewarm
 
-@server.rtc_session
+@server.rtc_session(agent_name="my-agent")
 async def entrypoint(ctx: JobContext):
     # Corrected Soniox STT initialization
     stt_instance = soniox.STT(

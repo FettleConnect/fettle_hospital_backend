@@ -57,3 +57,11 @@ Fettle Backend is a Django-based system designed for managing and analyzing hosp
 -   **SIP Trunk Passwords:** When creating trunks with passwords containing special characters (like `$`), passing them inline in bash can cause escaping bugs. Always prefer using the LiveKit Go API, Python SDK, or passing a structured JSON file to `lk sip outbound create` to ensure correct string literals.
 -   **Docker Networking & SIP:** When `livekit-server` and `livekit-sip` run with `network_mode: host`, ensure `livekit.yaml` and `sip.yaml` have perfectly aligned `rtp_port` ranges (e.g., 50000-60000). Mismatched RTP ports result in signaling succeeding (`Status: 200`) but media timing out (`connect timeout after ICE connected`).
 -   **Inbound Call Configuration:** To allow inbound calls to actually bridge to an agent, the SIP Dispatch Rule **must** contain a `room_config` block that explicitly defines the agent name. Otherwise, the call will sit in a ringing state in an empty room until the provider times out.
+
+## 🌐 Nginx & Docker Networking (Cloudflare 521)
+
+-   **Shared Network:** The `hospital_frontend` container (running Nginx) and the `hospital_backend` containers MUST share a common Docker network (e.g., `main-network`).
+-   **Host Resolution:** Nginx in Docker often fails to resolve other container names if the network isn't explicitly defined as `external`. If DNS fails, using the internal bridge IP (e.g., `172.20.0.3`) in `proxy_pass` is a stable fallback.
+-   **SSL Passthrough:** Since Cloudflare expects HTTPS, and internal Fettle tasks rely on `INTERNAL_API_BASE_URL` with HTTPS, the backend `web-prod` should run `runsslserver`. Nginx must then `proxy_pass` to the HTTPS port (`8000`) rather than HTTP.
+-   **Persistence Verification:** After adding a volume to Redis, the first restart may appear to "wipe" data because the empty volume mounts over the existing process memory. Always run the reconstruction script once after enabling persistence to lock the state into the physical disk.
+

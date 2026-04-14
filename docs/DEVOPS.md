@@ -44,6 +44,28 @@ When creating the inbound dispatch rule, the JSON payload MUST include:
 **The Fix:**
 Always use a Python script to write a strictly formatted JSON file to disk, and pass that file to the `lk sip outbound create` command.
 
+## 6. Nginx Reverse Proxy (Cloudflare 521 Resolution)
+**The Bug:** Accessing `hospital.fettleconnect.com` returns a Cloudflare 521 (Web Server is Down) error.
+**The Cause:** 
+1.  The `nginx_static` container (frontend) was not on the same Docker network as the `web-prod` container (backend).
+2.  Nginx could not resolve the hostname `web-prod` via internal Docker DNS.
+**The Fix:**
+- Add an external network (e.g., `main-network`) to both `hospital_frontend/docker-compose.yml` and `hospital_backend/docker-compose.yml`.
+- Use the internal bridge IP (e.g., `172.20.0.3`) in the Nginx `proxy_pass` if container-name resolution fails.
+- Ensure Nginx proxies to the HTTPS port (`https://...:8000`) if the backend is running `runsslserver`.
+
+## 7. Infrastructure Recovery
+If SIP configuration is lost, use the automated recovery script:
+```bash
+python3 scripts/reconstruct_sip.py
+```
+This script will:
+1.  Wipe stale/broken trunks.
+2.  Recreate the Outbound Trunk with correct `$fettle` credentials.
+3.  Recreate the Inbound Trunk.
+4.  Recreate the Dispatch Rule with the mandatory `room_config` agent-dispatch block.
+
+
 ```python
 import json
 req = {

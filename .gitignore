@@ -13,6 +13,8 @@ __pycache__/
 .env.dev
 .env.prod
 *.pem
+*.key
+*.pub
 
 # IDEs
 .vscode/
@@ -21,4 +23,12 @@ __pycache__/
 # Large files / temporary
 abcd.xlsx
 *.log
-staticfiles/
+*.sqlite3
+*.xlsx
+
+# Gemini
+.gemini/
+
+# Caches
+.pytest_cache/
+.ruff_cache/

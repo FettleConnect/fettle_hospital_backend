@@ -7,7 +7,12 @@ def main() -> int:
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "project.settings_test")
     import pytest
 
-    test_labels = sys.argv[1:] or ["app", "phone_calling", "inbound_dashboard", "project"]
+    test_labels = sys.argv[1:] or [
+        "app",
+        "phone_calling",
+        "inbound_dashboard",
+        "project",
+    ]
     return pytest.main(test_labels)
 
 

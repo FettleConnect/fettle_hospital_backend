@@ -1,46 +1,52 @@
 import os
 import django
-from django.contrib.auth.hashers import make_password
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'project.settings')
+# Set up Django
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "project.settings")
 django.setup()
 
-from app.models import Hospital_model, Doctor_model
+from app.models import Hospital_model, Doctor_model  # noqa: E402
+
 
 def seed_doctors():
-    hospitals = Hospital_model.objects.all()
-    if not hospitals.exists():
-        print("No hospitals found. Please seed hospitals first.")
-        return
+    # 1. Get or create a Hospital
+    hospital, created = Hospital_model.objects.get_or_create(
+        name="Amor Hospitals", defaults={"reception_email": "reception@amor.com"}
+    )
+    if created:
+        print(f"Created Hospital: {hospital.name}")
 
-    hospital = hospitals.first()
-    
-    doctors = [
+    # 2. Create Doctors
+    doctors_data = [
         {
-            "name": "Kishore B Reddy",
-            "email": "kishore@amor.com",
-            "department": "Orthopedics Oncology",
-            "password": "doctorpassword"
-        },
-        {
-            "name": "Imran Ul Haq",
-            "email": "imran@amor.com",
+            "name": "Dr. Sumanth",
+            "email": "sumanth@amor.com",
             "department": "Cardiology",
-            "password": "doctorpassword"
-        }
+        },
+        {"name": "Dr. Pranay", "email": "pranay@amor.com", "department": "Neurology"},
+        {"name": "Dr. Kavya", "email": "kavya@amor.com", "department": "Dermatology"},
     ]
 
-    for d in doctors:
-        Doctor_model.objects.update_or_create(
-            email=d['email'],
+    for doc_data in doctors_data:
+        doctor, d_created = Doctor_model.objects.get_or_create(
+            email=doc_data["email"],
             defaults={
                 "hospital": hospital,
-                "name": d['name'],
-                "department": d['department'],
-                "password_hash": make_password(d['password'])
-            }
+                "name": doc_data["name"],
+                "password_hash": "doctor123",  # Will be hashed on save
+                "department": doc_data["department"],
+                "availability": {
+                    "Monday": "9 AM - 5 PM",
+                    "Wednesday": "9 AM - 5 PM",
+                    "Friday": "9 AM - 2 PM",
+                },
+            },
         )
-        print(f"Seeded doctor: {d['name']}")
+        if d_created:
+            print(f"Created Doctor: {doctor.name} ({doctor.department})")
+
+    print("Doctor seeding completed successfully!")
+
 
 if __name__ == "__main__":
     seed_doctors()

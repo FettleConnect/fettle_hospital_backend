@@ -28,9 +28,13 @@ The system is built on a distributed microservices architecture coordinated via 
 ├── phone_calling/      # SIP orchestration, LiveKit integration, and call tasks
 ├── inbound_dashboard/  # Specialized analytics for inbound call performance
 ├── chatbot/            # LangGraph-based dermatology patient assistant
-├── docs/               # Technical documentation and Voice Agent source code
+├── docs/               # Technical documentation
 │   ├── agent_v2.py     # The primary Voice AI Agent implementation
 │   └── DEVOPS.md       # Hard-earned lessons on SIP and LiveKit networking
+├── scripts/            # Utility and maintenance scripts (seeding, calling, fixing)
+├── tests/              # Orchestration and E2E verification tests
+├── deploy/             # Deployment configurations
+│   └── systemd/        # Linux systemd service files for fettle components
 ├── config/             # Configuration files
 │   ├── livekit/        # livekit.yaml and sip.yaml
 │   └── tls/            # SSL certificates for production

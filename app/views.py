@@ -1283,12 +1283,14 @@ class Patientengagement(APIView):
                     if any(pattern in remarks.lower() for pattern in junk_patterns):
                         continue
 
-                    feedback_dict.setdefault(label, []).append({
-                        "patient_name": item.patient.patient_name,
-                        "remark": remarks,
-                        "mobile_no": item.patient.mobile_no,
-                        "feedback_at": make_naive(item.called_at)
-                    })
+                    feedback_dict.setdefault(label, []).append(
+                        {
+                            "patient_name": item.patient.patient_name,
+                            "remark": remarks,
+                            "mobile_no": item.patient.mobile_no,
+                            "feedback_at": make_naive(item.called_at),
+                        }
+                    )
 
             feedback_data = [
                 {"feedback": label, "count": len(entries), "remarks": entries}
@@ -2258,16 +2260,16 @@ class DepartmentAnalytics(APIView):
             for item in intent_qs:
                 outcome = item.get("call_outcome")
                 if outcome:
-                    top_intents.append({
-                        "intent": outcome.replace("_", " ").title(),
-                        "value": item["value"]
-                    })
+                    top_intents.append(
+                        {
+                            "intent": outcome.replace("_", " ").title(),
+                            "value": item["value"],
+                        }
+                    )
 
-            return Response({
-                "department_table": data,
-                "top_intents": top_intents,
-                "error": 0
-            })
+            return Response(
+                {"department_table": data, "top_intents": top_intents, "error": 0}
+            )
         except Exception as e:
             return Response({"error": 1, "msg": str(e)})
 
@@ -2423,7 +2425,9 @@ class DoctorManagementView(APIView):
                 return Response({"msg": "Password reset to default", "error": 0})
 
             if action == "update_staff":
-                doctor = Doctor_model.objects.get(id=payload.get("id"), hospital_id=user_id)
+                doctor = Doctor_model.objects.get(
+                    id=payload.get("id"), hospital_id=user_id
+                )
                 if "mobile_no" in payload:
                     doctor.mobile_number = payload.get("mobile_no")
                 if "availability" in payload:
@@ -2441,9 +2445,7 @@ class DoctorManagementView(APIView):
                     "name": payload.get("name"),
                     "department": payload.get("department"),
                     "availability": payload.get("availability", {}),
-                    "password_hash": payload.get(
-                        "password", "doctorpassword"
-                    ),
+                    "password_hash": payload.get("password", "doctorpassword"),
                 },
             )
             if not created:

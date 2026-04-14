@@ -11,7 +11,6 @@ from livekit.agents import (
     JobContext,
     JobProcess,
     cli,
-    inference,
     room_io,
     function_tool,
     RunContext,
@@ -19,15 +18,8 @@ from livekit.agents import (
 from livekit.plugins import noise_cancellation, silero
 from livekit.plugins import (
     openai,
-    deepgram,
     cartesia,
-    silero,
-    noise_cancellation,
     soniox,
-    gladia,
-    elevenlabs,
-    sarvam,
-    google,
 )
 
 from livekit.plugins.turn_detector.multilingual import MultilingualModel

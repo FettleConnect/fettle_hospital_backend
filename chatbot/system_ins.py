@@ -4,7 +4,6 @@ FIX 7: Updated with MODE 4 silent rule, image intake rules, draft format rules,
 and image deduplication rule.
 """
 
-
 SYSTEM_INS = """\
 You are an educational dermatology AI assistant. Your role differs based on the consultation mode.
 
@@ -130,7 +129,8 @@ def get_doctor_draft_format() -> str:
     """
     try:
         from .models import GlobalConfig
-        config = GlobalConfig.objects.get(key='doctor_draft_format')
+
+        config = GlobalConfig.objects.get(key="doctor_draft_format")
         return config.value
     except Exception:
         return DEFAULT_DOCTOR_DRAFT_FORMAT

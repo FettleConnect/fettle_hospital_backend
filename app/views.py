@@ -2435,28 +2435,69 @@ class DoctorManagementView(APIView):
                 doctor.save()
                 return Response({"msg": "Staff updated successfully", "error": 0})
 
-            # Create new doctor using mobile_no as primary identifier if email not provided
-            email = payload.get("email") or f"{payload.get('mobile_no')}@fettle.ai"
-            doctor, created = Doctor_model.objects.get_or_create(
-                mobile_number=payload.get("mobile_no"),
-                defaults={
-                    "hospital_id": user_id,
-                    "email": email,
-                    "name": payload.get("name"),
-                    "department": payload.get("department"),
-                    "availability": payload.get("availability", {}),
-                    "password_hash": payload.get("password", "doctorpassword"),
-                },
-            )
-            if not created:
+            # Create new doctor using mobile_no as primary identifier
+            mobile_no = payload.get("mobile_no")
+            email = payload.get("email") or f"{mobile_no}@fettle.ai"
+
+            # Check for existing doctor with either email or mobile_no
+            existing = Doctor_model.objects.filter(
+                Q(email=email) | Q(mobile_number=mobile_no)
+            ).first()
+
+            if existing:
                 return Response(
-                    {"msg": "Doctor with this mobile number already exists", "error": 1}
+                    {
+                        "msg": "Doctor with this email or mobile number already exists",
+                        "error": 1,
+                    }
                 )
+
+            doctor = Doctor_model.objects.create(
+                hospital_id=user_id,
+                email=email,
+                mobile_number=mobile_no,
+                name=payload.get("name"),
+                department=payload.get("department"),
+                availability=payload.get("availability", []),
+                password_hash=payload.get("password", "doctorpassword"),
+            )
             return Response(
                 {"msg": "Doctor account created", "id": str(doctor.id), "error": 0}
             )
         except Exception as e:
             return Response({"msg": str(e), "error": 1})
+
+
+class MediVoiceTranscriptDownloadView(APIView):
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request, session_id):
+        from django.http import HttpResponse
+
+        try:
+            user_id = Hospital_user_model.objects.get(id=request.user_id).hospital.id
+            session = MediVoiceSession.objects.get(
+                id=session_id, doctor__hospital_id=user_id
+            )
+
+            transcriptions = session.transcriptions.all().order_by("timestamp")
+            content = f"Patient: {session.patient_name}\n"
+            content += f"Mobile: {session.patient_mobile}\n"
+            content += f"Doctor: Dr. {session.doctor.name}\n"
+            content += f"Date: {session.created_at.strftime('%Y-%m-%d %H:%M')}\n"
+            content += "-" * 40 + "\n\n"
+
+            for t in transcriptions:
+                speaker = "DOCTOR" if t.speaker == "doctor" else "PATIENT"
+                content += f"[{speaker}]: {t.text}\n"
+
+            response = HttpResponse(content, content_type="text/plain")
+            response["Content-Disposition"] = (
+                f'attachment; filename="transcript_{session.patient_name}_{session.id}.txt"'
+            )
+            return response
+        except Exception as e:
+            return HttpResponse(str(e), status=400)
 
 
 class DoctorTranscriptionView(APIView):

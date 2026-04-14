@@ -31,6 +31,8 @@ services:
       - pgdata_dev:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+    networks:
+      - main-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
       interval: 10s
@@ -52,6 +54,8 @@ services:
       - "8000:8000"
     volumes:
       - .:/app
+    networks:
+      - main-network
     depends_on:
       db:
         condition: service_healthy
@@ -72,6 +76,8 @@ services:
       RUN_MIGRATIONS: "false"
     volumes:
       - .:/app
+    networks:
+      - main-network
     depends_on:
       db:
         condition: service_healthy
@@ -118,6 +124,8 @@ services:
         required: false
     environment:
       RUN_MIGRATIONS: "false"
+    networks:
+      - main-network
     depends_on:
       redis:
         condition: service_healthy

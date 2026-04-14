@@ -1,5 +1,6 @@
 import json
 import subprocess
+import re
 
 # LIVEKIT CONFIG
 URL = "http://localhost:7880"
@@ -30,18 +31,18 @@ def main():
     print("\n1. Cleaning up existing rules...")
     rules_list = run_lk(["dispatch", "list"])
     if rules_list:
-        import re
-
         ids = re.findall(r"SDR_[a-zA-Z0-9]+", rules_list)
         for rid in ids:
             print(f"Deleting Rule: {rid}")
             run_lk(["dispatch", "delete", rid])
 
     print("\n2. Cleaning up existing trunks...")
-    trunks_list = run_lk(["outbound", "list"]) + run_lk(["inbound", "list"])
-    if trunks_list:
-        import re
+    # Guard against None return from run_lk
+    outbound_list = run_lk(["outbound", "list"]) or ""
+    inbound_list = run_lk(["inbound", "list"]) or ""
+    trunks_list = outbound_list + inbound_list
 
+    if trunks_list:
         ids = re.findall(r"ST_[a-zA-Z0-9]+", trunks_list)
         for tid in ids:
             print(f"Deleting Trunk: {tid}")

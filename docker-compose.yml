@@ -8,6 +8,8 @@ services:
       - "127.0.0.1:6379:6379"
     volumes:
       - redisdata:/data
+    networks:
+      - main-network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -98,6 +100,8 @@ services:
       - /app/config/tls/privkey.pem
     ports:
       - "8000:8000"
+    networks:
+      - main-network
     depends_on:
       redis:
         condition: service_healthy
@@ -161,3 +165,7 @@ services:
 volumes:
   pgdata_dev:
   redisdata:
+
+networks:
+  main-network:
+    external: true

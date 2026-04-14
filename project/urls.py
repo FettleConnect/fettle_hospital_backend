@@ -42,6 +42,7 @@ from app.views import (
     MediVoiceSyncView,
     StaffAvailabilityView,
     MediVoicePrescriptionPdfView,
+    MediVoiceTranscriptDownloadView,
 )
 from phone_calling.views import (
     Outbound_call,
@@ -50,6 +51,8 @@ from phone_calling.views import (
     Inboundcall,
     showInboundcall,
     processinboundcall_view,
+    VobizInboundWebhook,
+    VobizOutboundWebhook,
 )
 from inbound_dashboard.views import (
     Patientengagement_inbound,
@@ -124,12 +127,18 @@ urlpatterns = [
     path("api/doctor/login/", doctor_login_view.as_view()),
     path("api/medivoice/sessions/", MediVoiceSessionView.as_view()),
     path("api/medivoice/sync/", MediVoiceSyncView.as_view()),
+    path("api/webhooks/vobiz/inbound/", VobizInboundWebhook.as_view()),
+    path("api/webhooks/vobiz/outbound/", VobizOutboundWebhook.as_view()),
     path(
         "api/medivoice/prescription/<uuid:session_id>/",
         MediVoicePrescriptionPdfView.as_view(),
     ),
     path("api/staff/availability/", StaffAvailabilityView.as_view()),
     path("api/hospital/doctor_transcripts/", DoctorTranscriptionView.as_view()),
+    path(
+        "api/medivoice/transcript/<uuid:session_id>/",
+        MediVoiceTranscriptDownloadView.as_view(),
+    ),
     path("api/roi_metrics/", ROIMetrics.as_view()),
     path("api/department_analytics/", DepartmentAnalytics.as_view()),
     path("api/outbound_call/", Outbound_call.as_view()),

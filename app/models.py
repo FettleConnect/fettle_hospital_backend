@@ -260,7 +260,7 @@ class Doctor_model(models.Model):
     name = models.CharField(max_length=255)
     email = models.EmailField(unique=True)
     password_hash = models.TextField()
-    mobile_number = models.CharField(max_length=20, blank=True, null=True)
+    mobile_number = models.CharField(max_length=20, blank=True, null=True, unique=True)
     department = models.CharField(max_length=255)
     availability = models.JSONField(default=dict, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)

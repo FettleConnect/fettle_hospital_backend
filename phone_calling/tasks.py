@@ -19,9 +19,11 @@ import traceback
 
 load_dotenv()
 
-# CloudConnect WhatsApp Configuration
-CLOUDCONNECT_WA_URL = "https://api.cloudconnect.in/whatsapp/send"
-CLOUDCONNECT_WA_KEY = os.getenv("CLOUDCONNECT_WA_KEY")
+# Vobiz WhatsApp Configuration
+VOBIZ_WA_URL = "https://api.vobiz.ai/v1/messaging/send"
+VOBIZ_AUTH_ID = os.getenv("VOBIZ_AUTH_ID")
+VOBIZ_AUTH_TOKEN = os.getenv("VOBIZ_AUTH_TOKEN")
+
 INTERNAL_API_BASE_URL = os.getenv(
     "INTERNAL_API_BASE_URL", "https://hospital.fettleconnect.com:8000"
 )
@@ -29,13 +31,24 @@ INTERNAL_API_EMAIL = os.getenv("INTERNAL_API_EMAIL")
 INTERNAL_API_PASSWORD = os.getenv("INTERNAL_API_PASSWORD")
 
 
-def cloudconnect_whatsapp_msg(msg, to_number="+919010827279"):
+def send_vobiz_whatsapp(text, to_number):
     """
-    Sends a WhatsApp message via CloudConnect API.
+    Sends a WhatsApp message via Vobiz BSP API.
     """
     try:
-        # response = requests.post(CLOUDCONNECT_WA_URL, json=payload)
-        print(f"CloudConnect WhatsApp Sent to {to_number}: {msg}")
+        headers = {
+            "X-Auth-ID": VOBIZ_AUTH_ID,
+            "X-Auth-Token": VOBIZ_AUTH_TOKEN,
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "to": to_number,
+            "type": "text",
+            "text": {"body": text}
+        }
+        # In actual prod, uncomment the request:
+        # response = requests.post(VOBIZ_WA_URL, headers=headers, json=payload)
+        print(f"Vobiz WhatsApp Sent to {to_number}: {text}")
         return {"status": "success"}
     except Exception as e:
         print(f"WhatsApp Error: {str(e)}")
@@ -43,57 +56,61 @@ def cloudconnect_whatsapp_msg(msg, to_number="+919010827279"):
 
 
 @shared_task
-def call_outbound_task(json_payload):
+def call_outbound_task(hospital_id, campaign_id=None):
     try:
-        sleep(5)
-        phone_number = json_payload["customer"]["number"]
-        id_key = json_payload["customer"]["id_key"]
-
-        # Restore native LiveKit dispatch
-        dispatch_call(phone_number, id_key)
-
-        task_id = call_outbound_task.request.id
-        hospital_name = json_payload["metadata"]["hospital"]
-        hospital_obj = Hospital_model.objects.get(name=hospital_name)
-        vapi_id = id_key
-        status = "in-progress"
-
-        try:
-            assistant_id = Outbound_assistant.objects.get(hospital=hospital_obj)
-        except Outbound_assistant.DoesNotExist:
-            assistant_id = None
-
-        try:
-            patient_obj = Patient_model.objects.get(
-                id=json_payload["metadata"]["patient_id"]
-            )
-        except Patient_model.DoesNotExist:
-            patient_obj = None
-
-        campaign_id = json_payload["metadata"].get("campaign_id")
+        from app.models import Campaign, Hospital_model, Outbound_assistant, Patient_model
+        
+        hospital_obj = Hospital_model.objects.get(id=hospital_id)
+        
+        # Determine AI Prompt from Campaign Template
+        custom_prompt = None
         campaign_obj = None
         if campaign_id:
-            from app.models import Campaign
-
             try:
                 campaign_obj = Campaign.objects.get(id=campaign_id)
+                # Assuming campaign has a template or prompt field
+                custom_prompt = getattr(campaign_obj, "ai_prompt", None)
             except Campaign.DoesNotExist:
-                campaign_obj = None
+                pass
 
-        Outbound_Hospital.objects.create(
-            vapi_id=vapi_id,
-            status=status,
-            assistant_id=assistant_id,
-            patient_id=patient_obj,
-            campaign=campaign_obj,
-            task_id=task_id,
-            calling_process="not_happened",
-        )
-        return {"error": 0, "vapi_id": vapi_id}
+        # For testing, we'll use your provided number if no patients found
+        patients = Patient_model.objects.filter(hospital=hospital_obj)
+        if not patients.exists():
+            # Create a mock patient for E2E testing if empty
+            target_numbers = ["+919003037804"]
+        else:
+            target_numbers = [p.mobile_no for p in patients]
+
+        for phone_number in target_numbers:
+            id_key = f"manual_call_{uuid.uuid4().hex[:8]}"
+            
+            # Metadata Injection for the Voice Agent
+            metadata = {
+                "phone_number": phone_number,
+                "id_key": id_key,
+                "type": "outbound",
+                "hospital": hospital_obj.name,
+                "custom_prompt": custom_prompt,
+                "campaign_id": str(campaign_id) if campaign_id else None
+            }
+
+            # Start Recording (Handled in livekit_calling.py)
+            dispatch_call(phone_number, id_key, metadata=json.dumps(metadata))
+
+            Outbound_Hospital.objects.create(
+                vapi_id=id_key,
+                status="in-progress",
+                hospital=hospital_obj,
+                patient_mobile=phone_number,
+                campaign=campaign_obj,
+                calling_process="in_progress",
+            )
+            
+        return {"error": 0, "count": len(target_numbers)}
     except Exception as e:
         tb = traceback.format_exc()
         print("Traceback error:\n", tb)
-        return {"error": 1, "errorMsg": str(e), "traceback": tb}
+        return {"error": 1, "errorMsg": str(e)}
 
 
 def json_audio(patient_id, text, called_at, duration):

@@ -465,3 +465,51 @@ class download_excel_outbound(APIView):
             return response
         except Exception as e:
             return Response({"error": 1, "errorMsg": str(e)})
+
+
+class VobizInboundWebhook(APIView):
+    def post(self, request):
+        try:
+            data = request.data
+            call_id = data.get("call_id")
+            status = data.get("status")
+            outcome = data.get("outcome")
+            remark = data.get("remark")
+
+            internal_status = "not_connected"
+            if status == "in_progress":
+                internal_status = "in_progress"
+            elif status == "answered" or status == "completed":
+                internal_status = "connected"
+
+            Inbound_Hospital.objects.filter(id=call_id).update(
+                calling_process=internal_status, status=status
+            )
+
+            return Response({"msg": "Inbound Webhook Received", "error": 0})
+        except Exception as e:
+            return Response({"msg": str(e), "error": 1})
+
+
+class VobizOutboundWebhook(APIView):
+    def post(self, request):
+        try:
+            data = request.data
+            call_id = data.get("call_id")
+            status = data.get("status")
+            outcome = data.get("outcome")
+            remark = data.get("remark")
+
+            internal_status = "not_connected"
+            if status == "in_progress":
+                internal_status = "in_progress"
+            elif status == "answered" or status == "completed":
+                internal_status = "connected"
+
+            Outbound_Hospital.objects.filter(id=call_id).update(
+                calling_process=internal_status, status=status
+            )
+
+            return Response({"msg": "Outbound Webhook Received", "error": 0})
+        except Exception as e:
+            return Response({"msg": str(e), "error": 1})

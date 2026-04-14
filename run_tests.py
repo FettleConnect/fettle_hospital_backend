@@ -1,15 +1,20 @@
-#!/usr/bin/env python3
-import os
+import subprocess
 import sys
-
-
-def main() -> int:
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "project.settings_test")
-    import pytest
-
-    test_labels = sys.argv[1:] or ["app", "phone_calling", "inbound_dashboard", "project"]
-    return pytest.main(test_labels)
-
+import os
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # Ensure we are in the project root
+    root_dir = os.path.dirname(os.path.abspath(__file__))
+    os.chdir(root_dir)
+
+    # Path to the actual runner
+    runner_path = os.path.join("tests", "run_tests.py")
+
+    if not os.path.exists(runner_path):
+        print(f"Error: Could not find test runner at {runner_path}")
+        sys.exit(1)
+
+    # Execute the actual runner with same arguments
+    cmd = [sys.executable, runner_path] + sys.argv[1:]
+    result = subprocess.run(cmd)
+    sys.exit(result.returncode)
